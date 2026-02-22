@@ -983,7 +983,17 @@ class FrenchRealEstateEvaluator:
 
         # Floor level
         floor = listing.features.floor
+        total_floors = listing.features.total_floors
         has_elevator = listing.features.has_elevator
+
+        # Check for high-rise building (>10 floors)
+        if total_floors is not None and total_floors > 10:
+            score -= 15
+            red_flags.append(
+                f"High-rise building ({total_floors} floors) - less desirable, higher charges"
+            )
+            details.append(f"High-rise ({total_floors} floors) ⬇️")
+            status = "⚠️"
 
         if floor is not None:
             if floor == 0:

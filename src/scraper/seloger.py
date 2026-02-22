@@ -570,6 +570,14 @@ class SeLogerScraper(BaseScraper):
             postal_code = tracking_config.get("cp", "")
             dpe_class = tracking_config.get("DPE", "")
             floor = tracking_config.get("etage")
+            total_floors = None
+
+            # Try to extract floor/total_floors from title (e.g., "Étage 14/17")
+            page_text = soup.get_text()
+            floor_pattern = re.search(r"[Éé]tage\s*(\d+)\s*/\s*(\d+)", page_text, re.IGNORECASE)
+            if floor_pattern:
+                floor = int(floor_pattern.group(1))
+                total_floors = int(floor_pattern.group(2))
 
             # Try to get exact price from SEO title (tracking_config rounds it)
             # SEO title format: "Appartement à vendre T3/F3 60 m² 529900 € ..."
@@ -617,6 +625,7 @@ class SeLogerScraper(BaseScraper):
                 "rooms": rooms,
                 "bedrooms": bedrooms,
                 "floor": floor,
+                "total_floors": total_floors,
             }
 
             # Check for amenities in tracking_config commodites

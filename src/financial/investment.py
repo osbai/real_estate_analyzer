@@ -106,7 +106,7 @@ class InvestmentAnalyzer:
         has_parking: bool = False,
         has_balcony_terrace: bool = False,
         down_payment_percentage: float = 20.0,
-        loan_duration_years: int = 20,
+        loan_duration_years: int = 25,
         interest_rate: Optional[float] = None,
         include_loan_comparison: bool = True,
         use_management_company: bool = False,

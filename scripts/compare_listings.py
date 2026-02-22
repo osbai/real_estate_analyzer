@@ -477,15 +477,38 @@ def add_investment_analysis(
         a.investment = report
 
 
-def print_investment_summary(analyses: list[ListingAnalysis]):
+def print_investment_summary(
+    analyses: list[ListingAnalysis],
+    loan_duration: int = 25,
+    down_payment_pct: float = 20.0,
+    interest_rate: float = None,
+):
     """Print investment analysis summary for all listings."""
     if not analyses or not any(a.investment for a in analyses):
         print("\n⚠️ No investment analysis available.")
         return
 
+    # Get default interest rate from CashFlowModeler if not specified
+    if interest_rate is None:
+        from src.financial.cashflow import CashFlowModeler
+
+        interest_rate = CashFlowModeler.DEFAULT_RATES.get(loan_duration, 3.65)
+
     print("\n" + "=" * 110)
     print("💰 INVESTMENT ANALYSIS SUMMARY")
     print("=" * 110)
+
+    # Print financial assumptions
+    print("\n📋 Financial Parameters Used:")
+    print(f"   • Loan Duration: {loan_duration} years")
+    print(f"   • Down Payment: {down_payment_pct:.0f}%")
+    print(f"   • Interest Rate: {interest_rate:.2f}%")
+    print(f"   • Loan Insurance: 0.30%/year")
+    print(f"   • Vacancy Allowance: 1 month/year")
+    print(f"   • Copro Charges: ~3€/m²/month (if not provided)")
+    print(f"   • Taxe Foncière: ~1.5 months rent (if not provided)")
+    print(f"   • PNO Insurance: 0.2% of property value")
+    print("")
 
     # Header
     print(
@@ -725,9 +748,9 @@ def main():
     parser.add_argument(
         "--loan-duration",
         type=int,
-        default=20,
+        default=25,
         choices=[15, 20, 25],
-        help="Loan duration in years (default: 20)",
+        help="Loan duration in years (default: 25)",
     )
     parser.add_argument(
         "--interest-rate",
@@ -933,7 +956,12 @@ def main():
 
     # Print investment summary if requested
     if run_investment:
-        print_investment_summary(analyses)
+        print_investment_summary(
+            analyses,
+            loan_duration=args.loan_duration,
+            down_payment_pct=args.down_payment,
+            interest_rate=args.interest_rate,
+        )
 
         # Print detailed investment reports if requested
         if args.investment_detailed:
