@@ -166,6 +166,9 @@ class FrenchRealEstateEvaluator:
         # Check for suspicious pricing first
         self._check_suspicious_price(listing, red_flags, recommendations)
 
+        # Check for VEFA (off-plan properties)
+        self._check_vefa(listing, red_flags, recommendations)
+
         # 1. Surface & Loi Carrez
         surface_score = self._evaluate_surface(listing, red_flags, green_flags)
         criteria.append(surface_score)
@@ -367,22 +370,22 @@ class FrenchRealEstateEvaluator:
         self, listing: Listing, red_flags: list, recommendations: list
     ) -> bool:
         """Check if the price is suspiciously low for the area.
-
+        
         Returns True if the price is suspicious.
         """
         postal = listing.address.postal_code or ""
         dept = postal[:2] if postal else ""
-
+        
         avg_price = self.AVG_PRICE_PER_SQM.get(dept)
         if not avg_price:
             return False
-
+        
         price_per_sqm = listing.price_per_sqm
         if not price_per_sqm or price_per_sqm <= 0:
             return False
-
+        
         threshold = avg_price * self.SUSPICIOUS_PRICE_THRESHOLD
-
+        
         if price_per_sqm < threshold:
             pct_of_avg = (price_per_sqm / avg_price) * 100
             red_flags.append(
@@ -395,7 +398,96 @@ class FrenchRealEstateEvaluator:
                 "Check for: viager, occupied property, major works needed, flood zone, noise"
             )
             return True
+        
+        return False
 
+    def _check_vefa(
+        self, listing: Listing, red_flags: list, recommendations: list
+    ) -> bool:
+        """Check if the property is VEFA (off-plan, not yet built).
+        
+        Returns True if the property is VEFA with future delivery.
+        Does NOT flag if property is "disponible dès maintenant" (available now).
+        """
+        import re
+        
+        # Check title and description for VEFA indicators
+        title = (listing.title or "").lower()
+        description = (listing.description or "").lower()
+        text = f"{title} {description}"
+        
+        # Check if property is available now - if so, don't flag even if VEFA
+        # (property is ready or almost ready for handover)
+        immediate_availability = [
+            "disponible dès maintenant",
+            "disponible des maintenant",
+            "disponible immédiatement", 
+            "disponible immediatement",
+            "disponible de suite",
+            "livraison immédiate",
+            "livraison immediate",
+            "prêt à emménager",
+            "pret a emmenager",
+        ]
+        
+        for phrase in immediate_availability:
+            if phrase in text:
+                # Property is available now, don't flag as VEFA
+                return False
+        
+        # Strong VEFA indicators (definitely off-plan)
+        vefa_indicators = [
+            "vefa",
+            "livraison 202",  # Livraison 2025, 2026, 2027...
+            "livraison t",    # Livraison T1, T2, T3, T4
+            "livraison prévue",
+            "en cours de construction",
+            "en cours d'achèvement",
+            "programme neuf",
+            "programme immobilier neuf",
+            "futur achèvement",
+            "sur plan",
+            "achat sur plan",
+            "bien en construction",
+            "l'état futur d'achèvement",
+            "état futur d'achèvement",
+        ]
+        
+        for indicator in vefa_indicators:
+            if indicator in text:
+                red_flags.append(
+                    f"VEFA (off-plan) - Property not yet built"
+                )
+                recommendations.append(
+                    "⚠️ This is an off-plan purchase - property may not be built yet"
+                )
+                recommendations.append(
+                    "Consider: construction delays, developer bankruptcy risk, final product differences"
+                )
+                return True
+        
+        # Check for "disponible à partir de [future date]" pattern
+        # This indicates property not yet available
+        disponible_match = re.search(
+            r"disponible\s+(?:à\s+partir\s+(?:de\s+|du\s+)?|dès\s+le\s+)?"
+            r"(t[1-4]\s*20\d{2}|20\d{2}|"
+            r"(?:janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+20\d{2})",
+            text
+        )
+        if disponible_match:
+            red_flags.append(
+                f"VEFA (off-plan) - Property not yet built"
+            )
+            return True
+        
+        # Check for future delivery dates in format "livraison 2025" etc
+        delivery_match = re.search(r"livraison\s*(?:prévue\s*)?(?:en\s*)?(\d{4}|t[1-4]\s*\d{4})", text)
+        if delivery_match:
+            red_flags.append(
+                f"VEFA (off-plan) - Property not yet built"
+            )
+            return True
+        
         return False
 
     # Approximate commute times to central Paris (in minutes)

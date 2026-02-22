@@ -574,7 +574,9 @@ class SeLogerScraper(BaseScraper):
 
             # Try to extract floor/total_floors from title (e.g., "Étage 14/17")
             page_text = soup.get_text()
-            floor_pattern = re.search(r"[Éé]tage\s*(\d+)\s*/\s*(\d+)", page_text, re.IGNORECASE)
+            floor_pattern = re.search(
+                r"[Éé]tage\s*(\d+)\s*/\s*(\d+)", page_text, re.IGNORECASE
+            )
             if floor_pattern:
                 floor = int(floor_pattern.group(1))
                 total_floors = int(floor_pattern.group(2))
