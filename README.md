@@ -32,6 +32,22 @@ pip install -r requirements.txt
 
 ## Quick Start
 
+### Search for Listings on SeLoger
+
+Find listings matching your criteria directly from SeLoger search results:
+
+```bash
+# Edit the URL in the script or pass it as an argument
+python scripts/search_seloger.py
+
+# The script extracts all listing URLs from the search results page
+# Example output:
+# Found 31 listing URLs:
+#  1. https://www.seloger.com/annonces/achat/appartement/acheres-78/260450577.htm
+#  2. https://www.seloger.com/annonces/achat/appartement/argenteuil-95/258831099.htm
+#  ...
+```
+
 ### Compare Listings from Multiple Sources
 
 You can compare listings from both PAP and SeLoger in the same command:
@@ -193,7 +209,8 @@ Parking            │ ✗                       │ ✓
 real_estate_analyzer/
 ├── scripts/
 │   ├── test_scraper.py      # Single listing analysis
-│   └── compare_listings.py  # Multi-listing comparison
+│   ├── compare_listings.py  # Multi-listing comparison
+│   └── search_seloger.py    # Search SeLoger and extract listing URLs
 ├── src/
 │   ├── scraper/
 │   │   ├── base.py          # Core scraping infrastructure

@@ -14,6 +14,10 @@ Usage:
     # Compare multiple listings
     python scripts/compare_listings.py URL1 URL2 URL3 URL4
 
+    # Compare listings from a cached search
+    python scripts/compare_listings.py --from-cache seloger_search_20240101_120000_abc123.json
+    python scripts/compare_listings.py --from-cache seloger_search.json --limit 5
+
     # Rank by specific criteria
     python scripts/compare_listings.py URL1 URL2 --sort price
     python scripts/compare_listings.py URL1 URL2 --sort score
@@ -33,10 +37,14 @@ Usage:
 
 import argparse
 import csv
+import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Cache directory for search results (same as search_seloger.py)
+SEARCH_CACHE_DIR = Path(__file__).parent.parent / ".cache" / "searches"
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -163,21 +171,29 @@ def print_summary_table(analyses: list[ListingAnalysis], sort_by: str = "score")
     for i, analysis in enumerate(analyses, 1):
         analysis.rank = i
 
-    print("\n" + "=" * 100)
+    # Column widths
+    city_w = 18
+
+    print("\n" + "=" * 105)
     print("📋 LISTING COMPARISON SUMMARY")
-    print("=" * 100)
+    print("=" * 105)
 
     # Header
     print(
-        f"{'#':<3} {'City':<15} {'Surface':<10} {'Price':<12} {'€/m²':<10} "
-        f"{'Score':<8} {'Rating':<8} {'Risk':<12} {'DPE':<5} {'Value':<8}"
+        f"{'#':<3} {'City':<{city_w}} {'Surface':<8} {'Price':<12} {'€/m²':<8} "
+        f"{'Score':<6} {'Rating':<8} {'Risk':<8} {'DPE':<4} {'Value':<6}"
     )
-    print("-" * 100)
+    print("-" * 105)
 
     # Rows
     for a in analyses:
         l = a.listing
         e = a.evaluation
+
+        # Truncate long city names
+        city = l.address.city or "Unknown"
+        if len(city) > city_w - 1:
+            city = city[: city_w - 2] + "…"
 
         # Highlight best in category
         is_best_score = a.rank == 1 and sort_by == "score"
@@ -192,13 +208,13 @@ def print_summary_table(analyses: list[ListingAnalysis], sort_by: str = "score")
         }.get(e.risk_level.value, e.risk_level.value[:8])
 
         print(
-            f"{prefix}{a.rank:<2} {l.address.city:<15} {l.surface_area:<10.0f} "
-            f"{l.price_info.price:<12,} {l.price_per_sqm:<10,.0f} "
-            f"{e.overall_score:<8.0f} {e.rating.value:<8} {risk_short:<12} "
-            f"{l.energy_rating.energy_class.value:<5} {a.value_score:<8.1f}"
+            f"{prefix}{a.rank:<2} {city:<{city_w}} {l.surface_area:<8.0f} "
+            f"{l.price_info.price:<12,} {l.price_per_sqm:<8,.0f} "
+            f"{e.overall_score:<6.0f} {e.rating.value:<8} {risk_short:<8} "
+            f"{l.energy_rating.energy_class.value:<4} {a.value_score:<6.1f}"
         )
 
-    print("-" * 100)
+    print("-" * 105)
     print(
         f"Sorted by: {sort_by.upper()} | Value = Score per 100k€ (higher = better deal)"
     )
@@ -601,6 +617,41 @@ def export_to_csv(analyses: list[ListingAnalysis], filename: str):
     print(f"\n✅ Exported to {filename}")
 
 
+def load_urls_from_cache(cache_path: str) -> list[str]:
+    """Load listing URLs from a search cache file.
+
+    Args:
+        cache_path: Path to cache file (absolute or relative to SEARCH_CACHE_DIR)
+
+    Returns:
+        List of listing URLs
+    """
+    path = Path(cache_path)
+
+    # Try as-is first, then in cache directory
+    if not path.exists():
+        path = SEARCH_CACHE_DIR / cache_path
+
+    if not path.exists():
+        raise FileNotFoundError(f"Cache file not found: {cache_path}")
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    urls = data.get("listings", [])
+    if not urls:
+        raise ValueError(f"No listings found in cache file: {cache_path}")
+
+    # Print cache info
+    meta = data.get("metadata", {})
+    print(f"📂 Loading from cache: {path.name}")
+    print(f"   Search URL: {meta.get('search_url', 'unknown')[:60]}...")
+    print(f"   Fetched at: {meta.get('fetched_at', 'unknown')}")
+    print(f"   Total listings: {len(urls)}")
+
+    return urls
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compare and rank French real estate listings",
@@ -610,8 +661,21 @@ def main():
 
     parser.add_argument(
         "urls",
-        nargs="+",
-        help="URLs of listings to compare (at least 1, preferably 2+)",
+        nargs="*",
+        help="URLs of listings to compare (not needed if using --from-cache)",
+    )
+    parser.add_argument(
+        "--from-cache",
+        "-f",
+        metavar="FILE",
+        help="Load listing URLs from a search cache file (from search_seloger.py)",
+    )
+    parser.add_argument(
+        "--limit",
+        "-n",
+        type=int,
+        default=None,
+        help="Limit number of listings to compare (useful with --from-cache)",
     )
     parser.add_argument(
         "--mode",
@@ -683,11 +747,35 @@ def main():
 
     args = parser.parse_args()
 
-    if len(args.urls) < 1:
-        parser.error("Please provide at least one listing URL")
+    # Get URLs from cache or command line
+    urls = []
+    if args.from_cache:
+        try:
+            urls = load_urls_from_cache(args.from_cache)
+        except FileNotFoundError as e:
+            print(f"❌ Error: {e}")
+            print(f"\n💡 Available cache files in {SEARCH_CACHE_DIR}:")
+            if SEARCH_CACHE_DIR.exists():
+                for f in sorted(SEARCH_CACHE_DIR.glob("*.json"))[:10]:
+                    print(f"   {f.name}")
+            sys.exit(1)
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"❌ Error reading cache: {e}")
+            sys.exit(1)
+    else:
+        urls = args.urls
+
+    if not urls:
+        parser.error("Please provide listing URLs or use --from-cache")
+
+    # Apply limit if specified
+    if args.limit and args.limit > 0:
+        if len(urls) > args.limit:
+            print(f"   Limiting to first {args.limit} of {len(urls)} listings")
+        urls = urls[: args.limit]
 
     # Analyze listings
-    analyses = analyze_listings(args.urls, args.mode, use_cache=not args.no_cache)
+    analyses = analyze_listings(urls, args.mode, use_cache=not args.no_cache)
 
     if not analyses:
         print("\n❌ No listings could be analyzed.")
