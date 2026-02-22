@@ -351,41 +351,51 @@ class FrenchRealEstateEvaluator:
         details = []
         recommendations = []
         status = "✅"
-
+        
         # City info
         city = listing.address.city
         postal = listing.address.postal_code
         details.append(f"{city} ({postal})")
-
+        
         # Street info
         if listing.address.street:
             details.append(f"Street: {listing.address.street}")
         else:
             score -= 5
             recommendations.append("Visit the property to assess exact street location")
-
+        
         # Metro/Transport access
+        transport_info = []
         if listing.transport.metro_lines:
             lines = ", ".join(listing.transport.metro_lines)
-            details.append(f"Metro: {lines}")
+            transport_info.append(f"Metro {lines}")
             score += 15
-            green_flags.append(f"Near Metro line(s) {lines}")
+            
+            # Add distance/time if available
+            if listing.transport.distance_to_transport:
+                transport_info.append(f"({listing.transport.distance_to_transport})")
+                green_flags.append(f"Near Metro line(s) {lines} - {listing.transport.distance_to_transport}")
+            else:
+                green_flags.append(f"Near Metro line(s) {lines}")
         elif listing.transport.rer_lines:
             lines = ", ".join(listing.transport.rer_lines)
-            details.append(f"RER: {lines}")
+            transport_info.append(f"RER {lines}")
             score += 10
+            
+            if listing.transport.distance_to_transport:
+                transport_info.append(f"({listing.transport.distance_to_transport})")
+                green_flags.append(f"Near RER line(s) {lines} - {listing.transport.distance_to_transport}")
+            else:
+                green_flags.append(f"Near RER line(s) {lines}")
         else:
             score -= 10
             status = "⚠️"
-            recommendations.append(
-                "Verify public transport accessibility (Metro/RER within 10min walk)"
-            )
+            recommendations.append("Verify public transport accessibility (Metro/RER within 10min walk)")
             recommendations.append("Check distance to nearest station on Google Maps")
-
-        # Distance to transport
-        if listing.transport.distance_to_transport:
-            details.append(f"Transport: {listing.transport.distance_to_transport}")
-
+        
+        if transport_info:
+            details.append(" ".join(transport_info))
+        
         # Paris proximity (if in Île-de-France)
         if postal.startswith("75"):
             score += 10
@@ -393,7 +403,7 @@ class FrenchRealEstateEvaluator:
         elif postal.startswith(("92", "93", "94")):
             score += 5
             details.append("Petite Couronne - Good Paris access")
-
+        
         return CriterionScore(
             name="Location & Transport",
             category="Location",

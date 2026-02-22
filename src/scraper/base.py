@@ -1016,9 +1016,7 @@ class DescriptionParser:
         result["features"]["has_separate_kitchen"] = bool(
             re.search(r"cuisine\s+(?:ind[ée]pendante|s[ée]par[ée]e)", text)
         )
-        result["features"]["has_storage"] = bool(
-            re.search(r"rangement|placard", text)
-        )
+        result["features"]["has_storage"] = bool(re.search(r"rangement|placard", text))
         result["features"]["has_dressing"] = bool(re.search(r"dressing", text))
         result["features"]["has_alarm"] = bool(re.search(r"alarme", text))
         result["features"]["has_intercom"] = bool(
@@ -1054,7 +1052,9 @@ class DescriptionParser:
         # Metro lines
         metro_matches = re.findall(r"m[ée]tro\s+(?:ligne\s+)?(\d+|[a-z])", text)
         if metro_matches:
-            result["transport"]["metro_lines"] = list(set(m.upper() for m in metro_matches))
+            result["transport"]["metro_lines"] = list(
+                set(m.upper() for m in metro_matches)
+            )
 
         # Metro stations
         station_match = re.search(
@@ -1070,13 +1070,58 @@ class DescriptionParser:
         if rer_matches:
             result["transport"]["rer_lines"] = list(set(m.upper() for m in rer_matches))
 
-        # Distance to transport
-        dist_match = re.search(
-            r"[àa]\s+(\d+)\s*(?:min(?:ute)?s?|m[èe]tres?)\s+(?:du?\s+)?(?:m[ée]tro|transport|bus|RER)",
-            text,
-        )
-        if dist_match:
-            result["transport"]["distance_to_transport"] = f"{dist_match.group(1)} min"
+        # Distance/time to transport - multiple patterns
+        dist_patterns = [
+            # "à 5 minutes du métro"
+            (
+                r"[àa]\s+(\d+)\s*(?:min(?:ute)?s?)\s+(?:du?\s+)?(?:m[ée]tro|transport|bus|RER|station)",
+                "min",
+            ),
+            # "métro à 5 minutes"
+            (
+                r"(?:m[ée]tro|transport|station)\s+[àa]\s+(\d+)\s*(?:min(?:ute)?s?)",
+                "min",
+            ),
+            # "à quelques pas du métro" / "à deux pas du métro" / "quelques pas de... du métro"
+            (
+                r"[àa]\s+(quelques|deux)\s+pas\s+(?:[^.]{0,50})?(?:du?\s+)?(?:m[ée]tro|transport|RER)",
+                "steps",
+            ),
+            # "5 min à pied du métro"
+            (
+                r"(\d+)\s*(?:min(?:ute)?s?)\s+[àa]\s+pied[s]?\s+(?:du?\s+)?(?:m[ée]tro|transport|RER)",
+                "min",
+            ),
+            # "proche du métro", "proximité du métro"
+            (
+                r"(prox?imit[ée]|proche)\s+(?:du?\s+)?(?:m[ée]tro|transport|RER)",
+                "close",
+            ),
+            # "less than X minutes to Paris"
+            (
+                r"(?:moins\s+de\s+)?(\d+)\s*(?:min(?:ute)?s?)\s+(?:des?\s+)?(?:portes?\s+de\s+)?paris",
+                "paris",
+            ),
+        ]
+
+        for pattern, pattern_type in dist_patterns:
+            dist_match = re.search(pattern, text)
+            if dist_match:
+                value = dist_match.group(1)
+                if pattern_type == "min":
+                    result["transport"]["distance_to_transport"] = f"{value} min walk"
+                elif pattern_type == "steps":
+                    if value in ["quelques", "deux"]:
+                        result["transport"]["distance_to_transport"] = "2 min walk"
+                elif pattern_type == "close":
+                    result["transport"]["distance_to_transport"] = "Very close"
+                elif pattern_type == "paris":
+                    # Store Paris proximity separately or append
+                    if "distance_to_transport" not in result["transport"]:
+                        result["transport"][
+                            "distance_to_transport"
+                        ] = f"{value} min to Paris"
+                break
 
         # === Price Info ===
 
@@ -1121,8 +1166,11 @@ class DescriptionParser:
                 break
 
         # Filter out empty dicts and None values
-        return {k: {kk: vv for kk, vv in v.items() if vv is not None and vv != []} 
-                for k, v in result.items() if v}
+        return {
+            k: {kk: vv for kk, vv in v.items() if vv is not None and vv != []}
+            for k, v in result.items()
+            if v
+        }
 
 
 # === Base Scraper ===
