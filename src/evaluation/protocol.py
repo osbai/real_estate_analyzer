@@ -351,13 +351,13 @@ class FrenchRealEstateEvaluator:
     # Used to detect suspiciously low prices
     AVG_PRICE_PER_SQM = {
         "75": 10500,  # Paris
-        "92": 6500,   # Hauts-de-Seine
-        "93": 4200,   # Seine-Saint-Denis
-        "94": 5200,   # Val-de-Marne
-        "91": 3200,   # Essonne
-        "95": 3500,   # Val-d'Oise
-        "77": 3000,   # Seine-et-Marne
-        "78": 4200,   # Yvelines
+        "92": 6500,  # Hauts-de-Seine
+        "93": 4200,  # Seine-Saint-Denis
+        "94": 5200,  # Val-de-Marne
+        "91": 3200,  # Essonne
+        "95": 3500,  # Val-d'Oise
+        "77": 3000,  # Seine-et-Marne
+        "78": 4200,  # Yvelines
     }
 
     # Threshold for suspicious price (percentage of average)
@@ -367,22 +367,22 @@ class FrenchRealEstateEvaluator:
         self, listing: Listing, red_flags: list, recommendations: list
     ) -> bool:
         """Check if the price is suspiciously low for the area.
-        
+
         Returns True if the price is suspicious.
         """
         postal = listing.address.postal_code or ""
         dept = postal[:2] if postal else ""
-        
+
         avg_price = self.AVG_PRICE_PER_SQM.get(dept)
         if not avg_price:
             return False
-        
+
         price_per_sqm = listing.price_per_sqm
         if not price_per_sqm or price_per_sqm <= 0:
             return False
-        
+
         threshold = avg_price * self.SUSPICIOUS_PRICE_THRESHOLD
-        
+
         if price_per_sqm < threshold:
             pct_of_avg = (price_per_sqm / avg_price) * 100
             red_flags.append(
@@ -395,7 +395,7 @@ class FrenchRealEstateEvaluator:
                 "Check for: viager, occupied property, major works needed, flood zone, noise"
             )
             return True
-        
+
         return False
 
     # Approximate commute times to central Paris (in minutes)
@@ -404,104 +404,230 @@ class FrenchRealEstateEvaluator:
         # Paris (75) - 5-15 min depending on arrondissement
         "paris": 10,
         # 92 - Hauts-de-Seine (Petite Couronne West)
-        "boulogne-billancourt": 15, "boulogne billancourt": 15,
-        "issy-les-moulineaux": 15, "issy les moulineaux": 15,
-        "vanves": 18, "malakoff": 18, "montrouge": 15,
-        "clamart": 25, "meudon": 22, "sèvres": 25, "sevres": 25,
-        "saint-cloud": 20, "saint cloud": 20,
-        "suresnes": 20, "puteaux": 15, "courbevoie": 18,
-        "la défense": 15, "la defense": 15, "nanterre": 20,
-        "rueil-malmaison": 25, "rueil malmaison": 25,
-        "colombes": 20, "bois-colombes": 18, "bois colombes": 18,
-        "asnières": 18, "asnieres": 18, "gennevilliers": 22,
-        "clichy": 15, "levallois-perret": 12, "levallois perret": 12,
-        "neuilly-sur-seine": 12, "neuilly sur seine": 12,
-        "antony": 25, "châtenay-malabry": 30, "chatenay-malabry": 30,
-        "le plessis-robinson": 30, "sceaux": 25, "bourg-la-reine": 22,
-        "fontenay-aux-roses": 25, "châtillon": 20, "chatillon": 20,
+        "boulogne-billancourt": 15,
+        "boulogne billancourt": 15,
+        "issy-les-moulineaux": 15,
+        "issy les moulineaux": 15,
+        "vanves": 18,
+        "malakoff": 18,
+        "montrouge": 15,
+        "clamart": 25,
+        "meudon": 22,
+        "sèvres": 25,
+        "sevres": 25,
+        "saint-cloud": 20,
+        "saint cloud": 20,
+        "suresnes": 20,
+        "puteaux": 15,
+        "courbevoie": 18,
+        "la défense": 15,
+        "la defense": 15,
+        "nanterre": 20,
+        "rueil-malmaison": 25,
+        "rueil malmaison": 25,
+        "colombes": 20,
+        "bois-colombes": 18,
+        "bois colombes": 18,
+        "asnières": 18,
+        "asnieres": 18,
+        "gennevilliers": 22,
+        "clichy": 15,
+        "levallois-perret": 12,
+        "levallois perret": 12,
+        "neuilly-sur-seine": 12,
+        "neuilly sur seine": 12,
+        "antony": 25,
+        "châtenay-malabry": 30,
+        "chatenay-malabry": 30,
+        "le plessis-robinson": 30,
+        "sceaux": 25,
+        "bourg-la-reine": 22,
+        "fontenay-aux-roses": 25,
+        "châtillon": 20,
+        "chatillon": 20,
         # 93 - Seine-Saint-Denis (Petite Couronne North-East)
-        "saint-denis": 15, "saint denis": 15,
-        "aubervilliers": 15, "pantin": 12, "le pré-saint-gervais": 15,
-        "les lilas": 15, "bagnolet": 15, "montreuil": 18,
-        "romainville": 18, "noisy-le-sec": 20, "noisy le sec": 20,
-        "bobigny": 20, "bondy": 22, "rosny-sous-bois": 22,
-        "villemomble": 25, "gagny": 28, "le raincy": 25,
-        "livry-gargan": 30, "aulnay-sous-bois": 28, "aulnay sous bois": 28,
-        "sevran": 30, "villepinte": 32, "tremblay-en-france": 35,
-        "le bourget": 20, "drancy": 20, "blanc-mesnil": 25,
-        "stains": 22, "pierrefitte": 25, "épinay-sur-seine": 22,
-        "saint-ouen": 15, "l'île-saint-denis": 18,
+        "saint-denis": 15,
+        "saint denis": 15,
+        "aubervilliers": 15,
+        "pantin": 12,
+        "le pré-saint-gervais": 15,
+        "les lilas": 15,
+        "bagnolet": 15,
+        "montreuil": 18,
+        "romainville": 18,
+        "noisy-le-sec": 20,
+        "noisy le sec": 20,
+        "bobigny": 20,
+        "bondy": 22,
+        "rosny-sous-bois": 22,
+        "villemomble": 25,
+        "gagny": 28,
+        "le raincy": 25,
+        "livry-gargan": 30,
+        "aulnay-sous-bois": 28,
+        "aulnay sous bois": 28,
+        "sevran": 30,
+        "villepinte": 32,
+        "tremblay-en-france": 35,
+        "le bourget": 20,
+        "drancy": 20,
+        "blanc-mesnil": 25,
+        "stains": 22,
+        "pierrefitte": 25,
+        "épinay-sur-seine": 22,
+        "saint-ouen": 15,
+        "l'île-saint-denis": 18,
         # 94 - Val-de-Marne (Petite Couronne South-East)
-        "vincennes": 12, "saint-mandé": 12, "saint mande": 12,
-        "charenton-le-pont": 15, "charenton le pont": 15,
-        "ivry-sur-seine": 15, "ivry sur seine": 15,
-        "vitry-sur-seine": 20, "vitry sur seine": 20,
-        "villejuif": 20, "kremlin-bicêtre": 18, "kremlin bicetre": 18,
-        "cachan": 22, "arcueil": 20, "gentilly": 15,
-        "alfortville": 18, "maisons-alfort": 18, "maisons alfort": 18,
-        "créteil": 25, "creteil": 25, "saint-maur-des-fossés": 25,
-        "joinville-le-pont": 20, "nogent-sur-marne": 20,
-        "le perreux-sur-marne": 22, "fontenay-sous-bois": 18,
-        "champigny-sur-marne": 25, "chennevières": 30,
-        "orly": 25, "choisy-le-roi": 22, "thiais": 25,
-        "rungis": 28, "chevilly-larue": 25,
-        "villeneuve-saint-georges": 28, "valenton": 30,
-        "boissy-saint-léger": 28, "boissy saint leger": 28,
-        "sucy-en-brie": 30, "bonneuil-sur-marne": 28,
+        "vincennes": 12,
+        "saint-mandé": 12,
+        "saint mande": 12,
+        "charenton-le-pont": 15,
+        "charenton le pont": 15,
+        "ivry-sur-seine": 15,
+        "ivry sur seine": 15,
+        "vitry-sur-seine": 20,
+        "vitry sur seine": 20,
+        "villejuif": 20,
+        "kremlin-bicêtre": 18,
+        "kremlin bicetre": 18,
+        "cachan": 22,
+        "arcueil": 20,
+        "gentilly": 15,
+        "alfortville": 18,
+        "maisons-alfort": 18,
+        "maisons alfort": 18,
+        "créteil": 25,
+        "creteil": 25,
+        "saint-maur-des-fossés": 25,
+        "joinville-le-pont": 20,
+        "nogent-sur-marne": 20,
+        "le perreux-sur-marne": 22,
+        "fontenay-sous-bois": 18,
+        "champigny-sur-marne": 25,
+        "chennevières": 30,
+        "orly": 25,
+        "choisy-le-roi": 22,
+        "thiais": 25,
+        "rungis": 28,
+        "chevilly-larue": 25,
+        "villeneuve-saint-georges": 28,
+        "valenton": 30,
+        "boissy-saint-léger": 28,
+        "boissy saint leger": 28,
+        "sucy-en-brie": 30,
+        "bonneuil-sur-marne": 28,
         # 77 - Seine-et-Marne (Grande Couronne East)
-        "chelles": 25, "vaires-sur-marne": 28,
-        "torcy": 30, "lognes": 32, "noisiel": 30,
-        "bussy-saint-georges": 35, "bussy saint georges": 35,
-        "marne-la-vallée": 35, "marne la vallee": 35,
-        "chessy": 40, "val d'europe": 40,
-        "lagny-sur-marne": 35, "lagny": 35,
-        "meaux": 45, "melun": 50, "fontainebleau": 60,
-        "pontault-combault": 35, "roissy-en-brie": 35,
-        "ozoir-la-ferrière": 40, "villeparisis": 30,
-        "mitry-mory": 35, "claye-souilly": 40,
+        "chelles": 25,
+        "vaires-sur-marne": 28,
+        "torcy": 30,
+        "lognes": 32,
+        "noisiel": 30,
+        "bussy-saint-georges": 35,
+        "bussy saint georges": 35,
+        "marne-la-vallée": 35,
+        "marne la vallee": 35,
+        "chessy": 40,
+        "val d'europe": 40,
+        "lagny-sur-marne": 35,
+        "lagny": 35,
+        "meaux": 45,
+        "melun": 50,
+        "fontainebleau": 60,
+        "pontault-combault": 35,
+        "roissy-en-brie": 35,
+        "ozoir-la-ferrière": 40,
+        "villeparisis": 30,
+        "mitry-mory": 35,
+        "claye-souilly": 40,
         # 78 - Yvelines (Grande Couronne West)
-        "versailles": 25, "le chesnay": 28,
-        "saint-germain-en-laye": 25, "saint germain en laye": 25,
-        "poissy": 30, "achères": 35, "acheres": 35,
-        "maisons-laffitte": 25, "maisons laffitte": 25,
-        "sartrouville": 22, "houilles": 20,
-        "chatou": 20, "le vésinet": 22, "le vesinet": 22,
-        "conflans-sainte-honorine": 35, "conflans sainte honorine": 35,
-        "mantes-la-jolie": 50, "les mureaux": 45,
-        "vélizy-villacoublay": 30, "velizy": 30,
-        "viroflay": 25, "chaville": 22,
-        "saint-cyr-l'école": 30, "fontenay-le-fleury": 35,
-        "plaisir": 40, "trappes": 40,
-        "rambouillet": 55, "montigny-le-bretonneux": 35,
-        "guyancourt": 35, "élancourt": 40,
+        "versailles": 25,
+        "le chesnay": 28,
+        "saint-germain-en-laye": 25,
+        "saint germain en laye": 25,
+        "poissy": 30,
+        "achères": 35,
+        "acheres": 35,
+        "maisons-laffitte": 25,
+        "maisons laffitte": 25,
+        "sartrouville": 22,
+        "houilles": 20,
+        "chatou": 20,
+        "le vésinet": 22,
+        "le vesinet": 22,
+        "conflans-sainte-honorine": 35,
+        "conflans sainte honorine": 35,
+        "mantes-la-jolie": 50,
+        "les mureaux": 45,
+        "vélizy-villacoublay": 30,
+        "velizy": 30,
+        "viroflay": 25,
+        "chaville": 22,
+        "saint-cyr-l'école": 30,
+        "fontenay-le-fleury": 35,
+        "plaisir": 40,
+        "trappes": 40,
+        "rambouillet": 55,
+        "montigny-le-bretonneux": 35,
+        "guyancourt": 35,
+        "élancourt": 40,
         # 91 - Essonne (Grande Couronne South)
-        "massy": 25, "palaiseau": 30, "orsay": 35,
-        "gif-sur-yvette": 40, "saclay": 40,
-        "les ulis": 35, "bures-sur-yvette": 35,
-        "évry": 40, "evry": 40, "corbeil-essonnes": 40,
-        "savigny-sur-orge": 30, "juvisy-sur-orge": 25,
-        "athis-mons": 25, "viry-châtillon": 30,
-        "brétigny-sur-orge": 35, "arpajon": 40,
-        "saint-michel-sur-orge": 35, "sainte-geneviève-des-bois": 35,
-        "longjumeau": 30, "chilly-mazarin": 28,
-        "draveil": 30, "vigneux-sur-seine": 28,
-        "montgeron": 28, "yerres": 30,
-        "brunoy": 30, "épinay-sous-sénart": 35,
-        "saint-chéron": 45, "saint cheron": 45,
-        "étampes": 55, "etampes": 55,
+        "massy": 25,
+        "palaiseau": 30,
+        "orsay": 35,
+        "gif-sur-yvette": 40,
+        "saclay": 40,
+        "les ulis": 35,
+        "bures-sur-yvette": 35,
+        "évry": 40,
+        "evry": 40,
+        "corbeil-essonnes": 40,
+        "savigny-sur-orge": 30,
+        "juvisy-sur-orge": 25,
+        "athis-mons": 25,
+        "viry-châtillon": 30,
+        "brétigny-sur-orge": 35,
+        "arpajon": 40,
+        "saint-michel-sur-orge": 35,
+        "sainte-geneviève-des-bois": 35,
+        "longjumeau": 30,
+        "chilly-mazarin": 28,
+        "draveil": 30,
+        "vigneux-sur-seine": 28,
+        "montgeron": 28,
+        "yerres": 30,
+        "brunoy": 30,
+        "épinay-sous-sénart": 35,
+        "saint-chéron": 45,
+        "saint cheron": 45,
+        "étampes": 55,
+        "etampes": 55,
         # 95 - Val-d'Oise (Grande Couronne North)
-        "argenteuil": 20, "bezons": 22,
-        "cergy": 40, "pontoise": 40, "cergy-pontoise": 40,
-        "enghien-les-bains": 18, "montmorency": 25,
-        "ermont": 22, "eaubonne": 25, "saint-gratien": 22,
-        "franconville": 25, "sannois": 22,
-        "taverny": 30, "herblay": 30,
-        "cormeilles-en-parisis": 28, "montigny-lès-cormeilles": 25,
-        "saint-ouen-l'aumône": 35, "osny": 40,
-        "goussainville": 30, "gonesse": 25,
-        "sarcelles": 25, "garges-lès-gonesse": 25,
-        "villiers-le-bel": 28, "arnouville": 28,
-        "roissy-en-france": 35, "louvres": 35,
+        "argenteuil": 20,
+        "bezons": 22,
+        "cergy": 40,
+        "pontoise": 40,
+        "cergy-pontoise": 40,
+        "enghien-les-bains": 18,
+        "montmorency": 25,
+        "ermont": 22,
+        "eaubonne": 25,
+        "saint-gratien": 22,
+        "franconville": 25,
+        "sannois": 22,
+        "taverny": 30,
+        "herblay": 30,
+        "cormeilles-en-parisis": 28,
+        "montigny-lès-cormeilles": 25,
+        "saint-ouen-l'aumône": 35,
+        "osny": 40,
+        "goussainville": 30,
+        "gonesse": 25,
+        "sarcelles": 25,
+        "garges-lès-gonesse": 25,
+        "villiers-le-bel": 28,
+        "arnouville": 28,
+        "roissy-en-france": 35,
+        "louvres": 35,
     }
 
     def get_commute_time(self, city: str, postal_code: str = "") -> Optional[int]:
@@ -526,14 +652,14 @@ class FrenchRealEstateEvaluator:
         # Estimate based on department if no match
         dept = postal_code[:2] if postal_code else ""
         dept_estimates = {
-            "75": 15,   # Paris
-            "92": 20,   # Hauts-de-Seine
-            "93": 22,   # Seine-Saint-Denis
-            "94": 22,   # Val-de-Marne
-            "91": 40,   # Essonne
-            "95": 30,   # Val-d'Oise
-            "77": 45,   # Seine-et-Marne
-            "78": 40,   # Yvelines
+            "75": 15,  # Paris
+            "92": 20,  # Hauts-de-Seine
+            "93": 22,  # Seine-Saint-Denis
+            "94": 22,  # Val-de-Marne
+            "91": 40,  # Essonne
+            "95": 30,  # Val-d'Oise
+            "77": 45,  # Seine-et-Marne
+            "78": 40,  # Yvelines
         }
         return dept_estimates.get(dept)
 
@@ -609,7 +735,7 @@ class FrenchRealEstateEvaluator:
 
         # Get commute time estimate
         commute_time = self.get_commute_time(city, postal)
-        
+
         # Add commute time to details and check for red flag
         if commute_time is not None:
             details.append(f"~{commute_time}min to Paris")

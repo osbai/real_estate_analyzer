@@ -149,7 +149,9 @@ def analyze_listings(
     return analyses
 
 
-def print_summary_table(analyses: list[ListingAnalysis], sort_by: str = "score", skip_sort: bool = False):
+def print_summary_table(
+    analyses: list[ListingAnalysis], sort_by: str = "score", skip_sort: bool = False
+):
     """Print a compact summary table of all listings."""
     if not analyses:
         print("\n⚠️ No listings to compare.")
@@ -800,11 +802,15 @@ def main():
         filtered_count = total_before - len(analyses)
         if filtered_count > 0:
             print(f"\n🔍 Filtered out {filtered_count} listings with red flags")
-            print(f"   → Showing {len(analyses)} clean listings (use --include-all to see all)")
+            print(
+                f"   → Showing {len(analyses)} clean listings (use --include-all to see all)"
+            )
 
         if not analyses:
             print("\n❌ No clean listings remaining after filtering.")
-            print("   Use --include-all to see all listings including those with red flags.")
+            print(
+                "   Use --include-all to see all listings including those with red flags."
+            )
             sys.exit(1)
 
     # Filter out listings outside Île-de-France
@@ -819,7 +825,7 @@ def main():
             idf_analyses.append(a)
         else:
             non_idf.append(f"{a.listing.address.city} ({postal})")
-    
+
     if non_idf:
         print(f"\n🗺️  Filtered out {len(non_idf)} listings outside Île-de-France:")
         for city in non_idf[:5]:
@@ -842,7 +848,7 @@ def main():
             unknown_cities.append(a.listing.address.postal_code or "no postal")
         else:
             known_city_analyses.append(a)
-    
+
     if unknown_cities:
         print(f"\n❓ Filtered out {len(unknown_cities)} listings with unknown city")
         analyses = known_city_analyses
@@ -862,13 +868,17 @@ def main():
             )
             if commute is not None and commute <= args.max_commute:
                 filtered_analyses.append(a)
-        
+
         filtered_count = total_before - len(filtered_analyses)
         analyses = filtered_analyses
-        
+
         if filtered_count > 0:
-            print(f"\n🚇 Filtered out {filtered_count} listings with commute > {args.max_commute}min")
-            print(f"   → Showing {len(analyses)} listings within {args.max_commute}min of Paris")
+            print(
+                f"\n🚇 Filtered out {filtered_count} listings with commute > {args.max_commute}min"
+            )
+            print(
+                f"   → Showing {len(analyses)} listings within {args.max_commute}min of Paris"
+            )
 
         if not analyses:
             print(f"\n❌ No listings found with commute time ≤ {args.max_commute}min.")
@@ -909,7 +919,9 @@ def main():
 
     # Print summary table (skip_sort=True if we already sorted by cash flow or yield)
     sort_display = "cash flow" if cash_flow_sorted else args.sort
-    print_summary_table(analyses, sort_display, skip_sort=(cash_flow_sorted or args.sort == "yield"))
+    print_summary_table(
+        analyses, sort_display, skip_sort=(cash_flow_sorted or args.sort == "yield")
+    )
 
     # Print detailed comparison if requested or if only 2 listings
     if args.detailed or len(analyses) == 2:
