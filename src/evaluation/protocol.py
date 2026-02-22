@@ -343,6 +343,62 @@ class FrenchRealEstateEvaluator:
             recommendations=recommendations,
         )
 
+    # Known well-connected cities in Grande Couronne (have RER/Transilien even if not in listing)
+    WELL_CONNECTED_CITIES_77_78 = {
+        # 77 - Seine-et-Marne (RER A, RER E, Transilien)
+        "chelles",
+        "torcy",
+        "lagny",
+        "bussy-saint-georges",
+        "bussy saint georges",
+        "val d'europe",
+        "marne-la-vallée",
+        "marne la vallee",
+        "chessy",
+        "lognes",
+        "noisiel",
+        "noisy-le-grand",
+        "noisy le grand",
+        "pontault-combault",
+        "roissy-en-brie",
+        "ozoir-la-ferrière",
+        "melun",
+        "fontainebleau",
+        "meaux",
+        "villeparisis",
+        # 78 - Yvelines (RER A, RER C, Transilien L/N/U)
+        "versailles",
+        "saint-germain-en-laye",
+        "saint germain en laye",
+        "poissy",
+        "conflans-sainte-honorine",
+        "conflans sainte honorine",
+        "achères",
+        "acheres",
+        "maisons-laffitte",
+        "maisons laffitte",
+        "sartrouville",
+        "houilles",
+        "chatou",
+        "le vésinet",
+        "le vesinet",
+        "rueil-malmaison",
+        "nanterre",
+        "la défense",
+        "la defense",
+        "saint-cloud",
+        "sèvres",
+        "sevres",
+        "meudon",
+        "clamart",
+        "le chesnay",
+        "vélizy",
+        "velizy",
+        "viroflay",
+        "mantes-la-jolie",
+        "les mureaux",
+    }
+
     def _evaluate_location(
         self, listing: Listing, red_flags: list, green_flags: list
     ) -> CriterionScore:
@@ -351,63 +407,120 @@ class FrenchRealEstateEvaluator:
         details = []
         recommendations = []
         status = "✅"
-        
+
         # City info
         city = listing.address.city
         postal = listing.address.postal_code
         details.append(f"{city} ({postal})")
-        
+
         # Street info
         if listing.address.street:
             details.append(f"Street: {listing.address.street}")
         else:
             score -= 5
             recommendations.append("Visit the property to assess exact street location")
-        
-        # Metro/Transport access
+
+        # Determine zone (Paris connectivity)
+        dept = postal[:2] if postal else ""
+        has_metro = bool(listing.transport.metro_lines)
+        has_rer = bool(listing.transport.rer_lines)
+        has_transport = has_metro or has_rer
+
+        # Metro/Transport access scoring
         transport_info = []
-        if listing.transport.metro_lines:
+        if has_metro:
             lines = ", ".join(listing.transport.metro_lines)
             transport_info.append(f"Metro {lines}")
             score += 15
-            
-            # Add distance/time if available
+
             if listing.transport.distance_to_transport:
                 transport_info.append(f"({listing.transport.distance_to_transport})")
-                green_flags.append(f"Near Metro line(s) {lines} - {listing.transport.distance_to_transport}")
+                green_flags.append(
+                    f"Near Metro line(s) {lines} - {listing.transport.distance_to_transport}"
+                )
             else:
                 green_flags.append(f"Near Metro line(s) {lines}")
-        elif listing.transport.rer_lines:
+        elif has_rer:
             lines = ", ".join(listing.transport.rer_lines)
             transport_info.append(f"RER {lines}")
             score += 10
-            
+
             if listing.transport.distance_to_transport:
                 transport_info.append(f"({listing.transport.distance_to_transport})")
-                green_flags.append(f"Near RER line(s) {lines} - {listing.transport.distance_to_transport}")
+                green_flags.append(
+                    f"Near RER line(s) {lines} - {listing.transport.distance_to_transport}"
+                )
             else:
                 green_flags.append(f"Near RER line(s) {lines}")
         else:
             score -= 10
             status = "⚠️"
-            recommendations.append("Verify public transport accessibility (Metro/RER within 10min walk)")
+            recommendations.append(
+                "Verify public transport accessibility (Metro/RER within 10min walk)"
+            )
             recommendations.append("Check distance to nearest station on Google Maps")
-        
+
         if transport_info:
             details.append(" ".join(transport_info))
-        
-        # Paris proximity (if in Île-de-France)
-        if postal.startswith("75"):
-            score += 10
+
+        # Paris proximity scoring by department
+        if dept == "75":
+            # Paris intra-muros
+            score += 15
             green_flags.append("Located in Paris intra-muros")
-        elif postal.startswith(("92", "93", "94")):
-            score += 5
-            details.append("Petite Couronne - Good Paris access")
-        
+            details.append("Paris - Excellent connectivity")
+        elif dept in ("92", "93", "94"):
+            # Petite Couronne - well connected
+            score += 10
+            green_flags.append("Petite Couronne - Good Paris access")
+            details.append("Petite Couronne")
+        elif dept in ("91", "95"):
+            # Grande Couronne South/North - moderate
+            if has_rer:
+                score += 5
+                details.append("Grande Couronne (RER connected)")
+            else:
+                score -= 10
+                status = "⚠️"
+                details.append("Grande Couronne - Limited transport")
+                red_flags.append(f"Remote location ({city}) - No direct RER/Metro")
+                recommendations.append(
+                    "Check commute time to Paris (~45-60min+ likely)"
+                )
+        elif dept in ("77", "78"):
+            # Grande Couronne East/West - check if known well-connected city
+            city_lower = (city or "").lower()
+            is_known_connected = any(
+                known in city_lower for known in self.WELL_CONNECTED_CITIES_77_78
+            )
+
+            if has_rer or is_known_connected:
+                score += 5  # Bonus for connected Grande Couronne
+                details.append("Grande Couronne (RER/Transilien connected)")
+                if is_known_connected and not has_rer:
+                    green_flags.append(
+                        f"{city} - Well connected to Paris via RER/Transilien"
+                    )
+            else:
+                score -= 20
+                status = "⚠️"
+                details.append("Grande Couronne - Remote location")
+                red_flags.append(f"Remote location ({city}) - Poor Paris connectivity")
+                recommendations.append(
+                    "⚠️ Likely 1h+ commute to Paris - verify transport options"
+                )
+                recommendations.append("Consider car dependency for this location")
+        else:
+            # Outside Île-de-France or unknown
+            if not has_transport:
+                score -= 15
+                status = "⚠️"
+                recommendations.append("Verify location and transport accessibility")
+
         return CriterionScore(
             name="Location & Transport",
             category="Location",
-            score=min(score, 100),
+            score=min(max(score, 0), 100),  # Clamp between 0-100
             max_score=100,
             weight=self.WEIGHTS["location"],
             status=status,
