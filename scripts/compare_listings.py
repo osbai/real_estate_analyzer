@@ -5,6 +5,7 @@ This script helps you:
 1. Compare multiple listings side-by-side
 2. Rank them by overall score and value metrics
 3. Identify the "best" options based on your criteria
+4. Analyze investment potential (yield, cash flow, notary fees)
 
 Usage:
     # Compare two listings
@@ -17,9 +18,14 @@ Usage:
     python scripts/compare_listings.py URL1 URL2 --sort price
     python scripts/compare_listings.py URL1 URL2 --sort score
     python scripts/compare_listings.py URL1 URL2 --sort value
+    python scripts/compare_listings.py URL1 URL2 --sort yield
 
     # Show detailed comparison
     python scripts/compare_listings.py URL1 URL2 --detailed
+
+    # Show investment analysis
+    python scripts/compare_listings.py URL1 URL2 --investment
+    python scripts/compare_listings.py URL1 URL2 --investment --rent 1200
 
     # Export to CSV for spreadsheet analysis
     python scripts/compare_listings.py URL1 URL2 --export comparison.csv
@@ -28,7 +34,7 @@ Usage:
 import argparse
 import csv
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -36,6 +42,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.evaluation import EvaluationResult, FrenchRealEstateEvaluator
+from src.financial import InvestmentAnalyzer, InvestmentReport
 from src.models.listing import Listing
 from src.scraper import FetchMode, get_scraper
 
@@ -47,6 +54,7 @@ class ListingAnalysis:
     listing: Listing
     evaluation: EvaluationResult
     rank: int = 0
+    investment: Optional[InvestmentReport] = None
 
     @property
     def value_score(self) -> float:
@@ -60,10 +68,27 @@ class ListingAnalysis:
             return float("inf")
         return self.listing.price_info.price / self.evaluation.overall_score
 
+    @property
+    def gross_yield(self) -> Optional[float]:
+        """Gross yield if investment analysis available."""
+        return self.investment.gross_yield if self.investment else None
 
-def fetch_listing(url: str, mode: Optional[str] = None, use_cache: bool = True) -> Optional[Listing]:
+    @property
+    def net_yield(self) -> Optional[float]:
+        """Net yield if investment analysis available."""
+        return self.investment.net_yield if self.investment else None
+
+    @property
+    def monthly_cash_flow(self) -> Optional[float]:
+        """Monthly cash flow if investment analysis available."""
+        return self.investment.monthly_cash_flow if self.investment else None
+
+
+def fetch_listing(
+    url: str, mode: Optional[str] = None, use_cache: bool = True
+) -> Optional[Listing]:
     """Fetch and parse a listing from URL.
-    
+
     If mode is None, the scraper will use its default mode (PAP→cloudscraper, SeLoger→requests).
     """
     fetch_mode = None
@@ -89,9 +114,11 @@ def fetch_listing(url: str, mode: Optional[str] = None, use_cache: bool = True) 
         return None
 
 
-def analyze_listings(urls: list[str], mode: Optional[str] = None, use_cache: bool = True) -> list[ListingAnalysis]:
+def analyze_listings(
+    urls: list[str], mode: Optional[str] = None, use_cache: bool = True
+) -> list[ListingAnalysis]:
     """Fetch, parse and evaluate multiple listings.
-    
+
     If mode is None, each scraper uses its default mode (PAP→cloudscraper, SeLoger→requests).
     """
     evaluator = FrenchRealEstateEvaluator()
@@ -395,6 +422,115 @@ def print_recommendation(analyses: list[ListingAnalysis]):
         )
 
 
+def add_investment_analysis(
+    analyses: list[ListingAnalysis],
+    monthly_rent: Optional[float] = None,
+    down_payment_pct: float = 20.0,
+    loan_duration: int = 20,
+    interest_rate: Optional[float] = None,
+):
+    """Add investment analysis to each listing."""
+    analyzer = InvestmentAnalyzer()
+
+    print("\n📈 Running investment analysis...\n")
+
+    for a in analyses:
+        l = a.listing
+        report = analyzer.analyze(
+            purchase_price=l.price_info.price,
+            surface_area=l.surface_area,
+            city=l.address.city,
+            postal_code=l.address.postal_code,
+            monthly_rent=monthly_rent,  # Will be estimated if None
+            annual_charges=l.price_info.annual_charges,
+            annual_property_tax=l.price_info.property_tax,
+            description=l.description,
+            title=l.title,
+            year_built=l.features.year_built,
+            condition=l.features.condition,
+            has_parking=l.features.has_parking or False,
+            has_balcony_terrace=(l.features.has_balcony or l.features.has_terrace)
+            or False,
+            down_payment_percentage=down_payment_pct,
+            loan_duration_years=loan_duration,
+            interest_rate=interest_rate,
+            include_loan_comparison=True,
+        )
+        a.investment = report
+
+
+def print_investment_summary(analyses: list[ListingAnalysis]):
+    """Print investment analysis summary for all listings."""
+    if not analyses or not any(a.investment for a in analyses):
+        print("\n⚠️ No investment analysis available.")
+        return
+
+    print("\n" + "=" * 110)
+    print("💰 INVESTMENT ANALYSIS SUMMARY")
+    print("=" * 110)
+
+    # Header
+    print(
+        f"{'#':<3} {'City':<15} {'Price':<12} {'Total Cost':<14} "
+        f"{'Rent':<10} {'Gross %':<9} {'Net %':<9} {'Cash Flow':<14} {'Status':<20}"
+    )
+    print("-" * 110)
+
+    for a in analyses:
+        if not a.investment:
+            continue
+        inv = a.investment
+
+        cf_str = (
+            f"{'+' if inv.monthly_cash_flow >= 0 else ''}{inv.monthly_cash_flow:,.0f}€"
+        )
+        rent_str = f"{inv.monthly_rent:,.0f}€" + (" *" if inv.rent_is_estimated else "")
+
+        # Status emoji
+        status = inv.cash_flow_status
+        if "Positive" in status:
+            status_short = "🟢 Positive"
+        elif "Break" in status or "Neutral" in status:
+            status_short = "🟡 Break-even"
+        else:
+            status_short = "🔴 Effort req."
+
+        print(
+            f"{a.rank:<3} {a.listing.address.city:<15} "
+            f"{inv.purchase_price:<12,} {inv.total_acquisition_cost:<14,} "
+            f"{rent_str:<10} {inv.gross_yield:<9.2f} {inv.net_yield:<9.2f} "
+            f"{cf_str:<14} {status_short:<20}"
+        )
+
+    print("-" * 110)
+    print("* = estimated rent | Yields in % | Cash Flow = monthly")
+
+    # Find best investment
+    with_investment = [a for a in analyses if a.investment]
+    if with_investment:
+        best_yield = max(with_investment, key=lambda x: x.investment.gross_yield)
+        best_cf = max(with_investment, key=lambda x: x.investment.monthly_cash_flow)
+
+        print(
+            f"\n  📊 BEST GROSS YIELD: #{best_yield.rank} {best_yield.listing.address.city} ({best_yield.investment.gross_yield:.2f}%)"
+        )
+        print(
+            f"  💰 BEST CASH FLOW: #{best_cf.rank} {best_cf.listing.address.city} ({'+' if best_cf.investment.monthly_cash_flow >= 0 else ''}{best_cf.investment.monthly_cash_flow:,.0f}€/month)"
+        )
+
+
+def print_investment_details(analyses: list[ListingAnalysis]):
+    """Print detailed investment analysis for each listing."""
+    analyzer = InvestmentAnalyzer()
+
+    for a in analyses:
+        if not a.investment:
+            continue
+
+        print("\n")
+        print(analyzer.format_report(a.investment))
+
+
 def export_to_csv(analyses: list[ListingAnalysis], filename: str):
     """Export comparison data to CSV."""
     if not analyses:
@@ -404,42 +540,58 @@ def export_to_csv(analyses: list[ListingAnalysis], filename: str):
     for a in analyses:
         l = a.listing
         e = a.evaluation
-        rows.append(
-            {
-                "Rank": a.rank,
-                "ID": l.id,
-                "Source": l.source,
-                "City": l.address.city,
-                "Postal": l.address.postal_code,
-                "Street": l.address.street or "",
-                "Surface_m2": l.surface_area,
-                "Price_EUR": l.price_info.price,
-                "Price_per_m2": l.price_per_sqm,
-                "Annual_Charges": l.price_info.annual_charges or "",
-                "Score": e.overall_score,
-                "Rating": e.rating.value,
-                "Risk": e.risk_level.value,
-                "Value_Score": round(a.value_score, 2),
-                "Fair_Value_Est": e.fair_value_estimate or "",
-                "DPE": l.energy_rating.energy_class.value,
-                "GES": l.energy_rating.ges_class.value,
-                "Rooms": l.features.rooms or "",
-                "Bedrooms": l.features.bedrooms or "",
-                "Floor": l.features.floor if l.features.floor is not None else "",
-                "Elevator": l.features.has_elevator,
-                "Parking": l.features.has_parking,
-                "Terrace": l.features.has_terrace,
-                "Balcony": l.features.has_balcony,
-                "Cellar": l.features.has_cellar,
-                "Building_Era": l.features.building_era or "",
-                "Condition": l.features.condition or "",
-                "Metro_Lines": ",".join(l.transport.metro_lines),
-                "Transport_Distance": l.transport.distance_to_transport or "",
-                "Copro_Lots": l.building.total_lots or "",
-                "Red_Flags": "; ".join(e.red_flags),
-                "URL": str(l.url),
-            }
-        )
+        row = {
+            "Rank": a.rank,
+            "ID": l.id,
+            "Source": l.source,
+            "City": l.address.city,
+            "Postal": l.address.postal_code,
+            "Street": l.address.street or "",
+            "Surface_m2": l.surface_area,
+            "Price_EUR": l.price_info.price,
+            "Price_per_m2": l.price_per_sqm,
+            "Annual_Charges": l.price_info.annual_charges or "",
+            "Score": e.overall_score,
+            "Rating": e.rating.value,
+            "Risk": e.risk_level.value,
+            "Value_Score": round(a.value_score, 2),
+            "Fair_Value_Est": e.fair_value_estimate or "",
+            "DPE": l.energy_rating.energy_class.value,
+            "GES": l.energy_rating.ges_class.value,
+            "Rooms": l.features.rooms or "",
+            "Bedrooms": l.features.bedrooms or "",
+            "Floor": l.features.floor if l.features.floor is not None else "",
+            "Elevator": l.features.has_elevator,
+            "Parking": l.features.has_parking,
+            "Terrace": l.features.has_terrace,
+            "Balcony": l.features.has_balcony,
+            "Cellar": l.features.has_cellar,
+            "Building_Era": l.features.building_era or "",
+            "Condition": l.features.condition or "",
+            "Metro_Lines": ",".join(l.transport.metro_lines),
+            "Transport_Distance": l.transport.distance_to_transport or "",
+            "Copro_Lots": l.building.total_lots or "",
+            "Red_Flags": "; ".join(e.red_flags),
+            "URL": str(l.url),
+        }
+
+        # Add investment data if available
+        if a.investment:
+            inv = a.investment
+            row.update(
+                {
+                    "Total_Acquisition_Cost": inv.total_acquisition_cost,
+                    "Notary_Fees": inv.notary_fees.total_fees,
+                    "Monthly_Rent": inv.monthly_rent,
+                    "Rent_Estimated": inv.rent_is_estimated,
+                    "Gross_Yield": round(inv.gross_yield, 2),
+                    "Net_Yield": round(inv.net_yield, 2),
+                    "Monthly_Cash_Flow": round(inv.monthly_cash_flow, 0),
+                    "Cash_Flow_Status": inv.cash_flow_status,
+                }
+            )
+
+        rows.append(row)
 
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
@@ -471,15 +623,51 @@ def main():
     parser.add_argument(
         "--sort",
         "-s",
-        choices=["score", "price", "price_m2", "surface", "value"],
+        choices=["score", "price", "price_m2", "surface", "value", "yield"],
         default="score",
-        help="Sort listings by: score, price, price_m2, surface, value (default: score)",
+        help="Sort listings by: score, price, price_m2, surface, value, yield (default: score)",
     )
     parser.add_argument(
         "--detailed",
         "-d",
         action="store_true",
         help="Show detailed side-by-side comparison",
+    )
+    parser.add_argument(
+        "--investment",
+        "-i",
+        action="store_true",
+        help="Show investment analysis (yield, cash flow, notary fees)",
+    )
+    parser.add_argument(
+        "--investment-detailed",
+        action="store_true",
+        help="Show full investment report for each listing",
+    )
+    parser.add_argument(
+        "--rent",
+        type=float,
+        default=None,
+        help="Expected monthly rent for investment analysis (estimated if not provided)",
+    )
+    parser.add_argument(
+        "--down-payment",
+        type=float,
+        default=20.0,
+        help="Down payment percentage (default: 20%%)",
+    )
+    parser.add_argument(
+        "--loan-duration",
+        type=int,
+        default=20,
+        choices=[15, 20, 25],
+        help="Loan duration in years (default: 20)",
+    )
+    parser.add_argument(
+        "--interest-rate",
+        type=float,
+        default=None,
+        help="Annual interest rate (default: current market rate ~3.5%%)",
     )
     parser.add_argument(
         "--export",
@@ -505,8 +693,25 @@ def main():
         print("\n❌ No listings could be analyzed.")
         sys.exit(1)
 
+    # Run investment analysis if requested or if sorting by yield
+    run_investment = args.investment or args.investment_detailed or args.sort == "yield"
+    if run_investment:
+        add_investment_analysis(
+            analyses,
+            monthly_rent=args.rent,
+            down_payment_pct=args.down_payment,
+            loan_duration=args.loan_duration,
+            interest_rate=args.interest_rate,
+        )
+
+    # Sort by yield if requested (requires investment analysis)
+    if args.sort == "yield" and all(a.investment for a in analyses):
+        analyses.sort(key=lambda x: x.investment.gross_yield, reverse=True)
+        for i, a in enumerate(analyses, 1):
+            a.rank = i
+
     # Print summary table
-    print_summary_table(analyses, args.sort)
+    print_summary_table(analyses, args.sort if args.sort != "yield" else "score")
 
     # Print detailed comparison if requested or if only 2 listings
     if args.detailed or len(analyses) == 2:
@@ -515,6 +720,14 @@ def main():
     # Print recommendation
     if len(analyses) >= 2:
         print_recommendation(analyses)
+
+    # Print investment summary if requested
+    if run_investment:
+        print_investment_summary(analyses)
+
+        # Print detailed investment reports if requested
+        if args.investment_detailed:
+            print_investment_details(analyses)
 
     # Export if requested
     if args.export:
