@@ -1,7 +1,7 @@
 """Scraper module - auto-detect and extract listings from French real estate sites."""
 
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import Optional, TYPE_CHECKING
 
 from src.scraper.base import (
     BaseScraper,
@@ -30,6 +30,7 @@ from src.scraper.base import (
 )
 
 if TYPE_CHECKING:
+    from src.scraper.leboncoin import LeBonCoinScraper
     from src.scraper.pap import PAPScraper
     from src.scraper.seloger import SeLogerScraper
 
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 URL_PATTERNS = {
     "seloger": re.compile(r"(?:www\.)?seloger\.com", re.IGNORECASE),
     "pap": re.compile(r"(?:www\.)?pap\.fr", re.IGNORECASE),
+    "leboncoin": re.compile(r"(?:www\.)?leboncoin\.fr", re.IGNORECASE),
 }
 
 
@@ -72,6 +74,10 @@ def get_scraper(url: str, mode: Optional[FetchMode] = None) -> BaseScraper:
                 from src.scraper.pap import PAPScraper
 
                 return PAPScraper(mode=mode) if mode else PAPScraper()
+            elif site_name == "leboncoin":
+                from src.scraper.leboncoin import LeBonCoinScraper
+
+                return LeBonCoinScraper(mode=mode) if mode else LeBonCoinScraper()
 
     supported = ", ".join(URL_PATTERNS.keys())
     raise ValueError(f"Unsupported URL: {url}. Supported sites: {supported}")

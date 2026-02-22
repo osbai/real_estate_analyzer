@@ -1,11 +1,11 @@
 # 🏠 French Real Estate Analyzer
 
-A comprehensive tool for scraping, evaluating, and comparing French real estate listings from SeLoger and PAP.fr.
+A comprehensive tool for scraping, evaluating, and comparing French real estate listings from SeLoger, PAP.fr, and LeBonCoin.
 
 ## Features
 
-- **Multi-Source Scraping**: Extract listing data from SeLoger.com and PAP.fr in the same command
-- **Anti-Bot Bypass**: Uses `cloudscraper` to bypass Cloudflare and similar protections
+- **Multi-Source Scraping**: Extract listing data from SeLoger.com, PAP.fr, and LeBonCoin in the same command
+- **Anti-Bot Bypass**: Uses `cloudscraper` and session-based requests to bypass Cloudflare and DataDome protections
 - **Description Parsing**: Extract hidden information from listing descriptions (charges, metro lines, building era, etc.)
 - **French Evaluation Protocol**: Score listings based on critical French real estate criteria
 - **Comparison Tool**: Compare multiple listings side-by-side and find the best value
@@ -161,6 +161,34 @@ python scripts/test_scraper.py "https://www.seloger.com/annonces/..." --mode hea
 |------|--------------|--------|-------|
 | **PAP.fr** | `cloudscraper` | ✅ Working | Bypasses Cloudflare protection |
 | **SeLoger.com** | `requests` | ✅ Working | Plain requests with session cookies |
+| **LeBonCoin.fr** | `requests` | ✅ Working | Session-based requests bypass DataDome |
+
+### Testing LeBonCoin Scraper
+
+LeBonCoin uses DataDome anti-bot protection. The scraper bypasses it by:
+1. Using a session to maintain cookies
+2. Visiting the homepage first to get initial cookies
+3. Using full browser-like headers including `sec-ch-ua`
+
+```bash
+# Test a LeBonCoin listing
+python scripts/test_scraper.py "https://www.leboncoin.fr/ad/ventes_immobilieres/3135532890" --evaluate
+
+# Compare listings from multiple sources
+python scripts/compare_listings.py \
+  "https://www.leboncoin.fr/ad/ventes_immobilieres/3135532890" \
+  "https://www.seloger.com/annonces/achat/appartement/drancy-93/123456789.htm" \
+  --investment
+
+# LeBonCoin extracts these fields:
+# - Title, price, surface area
+# - City, postal code  
+# - DPE/GES energy ratings
+# - Rooms, bedrooms, floor
+# - Amenities (elevator, balcony, cellar, parking)
+# - Agent info (pro vs private seller)
+# - Annual charges
+```
 
 ## Evaluation Criteria
 
