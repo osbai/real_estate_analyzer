@@ -430,7 +430,7 @@ class CashFlowModeler:
         if positive_scenarios:
             recommendation = (
                 f"✅ {len(positive_scenarios)} scenario(s) achieve positive cash flow. "
-                f"Best: {best_cash_flow.duration_years}yr loan with "
+                f"Best: {best_cash_flow.loan_duration_years}yr loan with "
                 f"{best_cash_flow.down_payment_percentage:.0f}% down "
                 f"(+{best_cash_flow.monthly_cash_flow:.0f}€/month)."
             )
