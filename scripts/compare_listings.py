@@ -149,27 +149,28 @@ def analyze_listings(
     return analyses
 
 
-def print_summary_table(analyses: list[ListingAnalysis], sort_by: str = "score"):
+def print_summary_table(analyses: list[ListingAnalysis], sort_by: str = "score", skip_sort: bool = False):
     """Print a compact summary table of all listings."""
     if not analyses:
         print("\n⚠️ No listings to compare.")
         return
 
-    # Sort analyses
-    if sort_by == "price":
-        analyses.sort(key=lambda x: x.listing.price_info.price)
-    elif sort_by == "price_m2":
-        analyses.sort(key=lambda x: x.listing.price_per_sqm)
-    elif sort_by == "surface":
-        analyses.sort(key=lambda x: x.listing.surface_area, reverse=True)
-    elif sort_by == "value":
-        analyses.sort(key=lambda x: x.value_score, reverse=True)
-    else:  # score (default)
-        analyses.sort(key=lambda x: x.evaluation.overall_score, reverse=True)
+    # Sort analyses (unless already sorted externally)
+    if not skip_sort:
+        if sort_by == "price":
+            analyses.sort(key=lambda x: x.listing.price_info.price)
+        elif sort_by == "price_m2":
+            analyses.sort(key=lambda x: x.listing.price_per_sqm)
+        elif sort_by == "surface":
+            analyses.sort(key=lambda x: x.listing.surface_area, reverse=True)
+        elif sort_by == "value":
+            analyses.sort(key=lambda x: x.value_score, reverse=True)
+        else:  # score (default)
+            analyses.sort(key=lambda x: x.evaluation.overall_score, reverse=True)
 
-    # Assign ranks
-    for i, analysis in enumerate(analyses, 1):
-        analysis.rank = i
+        # Assign ranks
+        for i, analysis in enumerate(analyses, 1):
+            analysis.rank = i
 
     # Column widths
     city_w = 18
@@ -806,6 +807,50 @@ def main():
             print("   Use --include-all to see all listings including those with red flags.")
             sys.exit(1)
 
+    # Filter out listings outside Île-de-France
+    IDF_DEPARTMENTS = {"75", "77", "78", "91", "92", "93", "94", "95"}
+    total_before = len(analyses)
+    idf_analyses = []
+    non_idf = []
+    for a in analyses:
+        postal = a.listing.address.postal_code or ""
+        dept = postal[:2]
+        if dept in IDF_DEPARTMENTS:
+            idf_analyses.append(a)
+        else:
+            non_idf.append(f"{a.listing.address.city} ({postal})")
+    
+    if non_idf:
+        print(f"\n🗺️  Filtered out {len(non_idf)} listings outside Île-de-France:")
+        for city in non_idf[:5]:
+            print(f"   → {city}")
+        if len(non_idf) > 5:
+            print(f"   → ... and {len(non_idf) - 5} more")
+        analyses = idf_analyses
+
+    if not analyses:
+        print("\n❌ No listings in Île-de-France found.")
+        sys.exit(1)
+
+    # Filter out listings with Unknown city
+    total_before = len(analyses)
+    known_city_analyses = []
+    unknown_cities = []
+    for a in analyses:
+        city = a.listing.address.city or ""
+        if city.lower() == "unknown" or not city:
+            unknown_cities.append(a.listing.address.postal_code or "no postal")
+        else:
+            known_city_analyses.append(a)
+    
+    if unknown_cities:
+        print(f"\n❓ Filtered out {len(unknown_cities)} listings with unknown city")
+        analyses = known_city_analyses
+
+    if not analyses:
+        print("\n❌ No listings with known cities found.")
+        sys.exit(1)
+
     # Filter by commute time if specified
     if args.max_commute:
         evaluator = FrenchRealEstateEvaluator()
@@ -847,8 +892,24 @@ def main():
         for i, a in enumerate(analyses, 1):
             a.rank = i
 
-    # Print summary table
-    print_summary_table(analyses, args.sort if args.sort != "yield" else "score")
+    # Sort by cash flow for investment reports (positive first, then by amount)
+    cash_flow_sorted = False
+    if run_investment and args.sort == "score":
+        # Default to cash flow sort for investment reports
+        analyses.sort(
+            key=lambda x: (
+                x.investment.monthly_cash_flow if x.investment else float("-inf")
+            ),
+            reverse=True,
+        )
+        # Re-assign ranks after sorting by cash flow
+        for i, a in enumerate(analyses, 1):
+            a.rank = i
+        cash_flow_sorted = True
+
+    # Print summary table (skip_sort=True if we already sorted by cash flow or yield)
+    sort_display = "cash flow" if cash_flow_sorted else args.sort
+    print_summary_table(analyses, sort_display, skip_sort=(cash_flow_sorted or args.sort == "yield"))
 
     # Print detailed comparison if requested or if only 2 listings
     if args.detailed or len(analyses) == 2:

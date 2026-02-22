@@ -161,6 +161,10 @@ class FrenchRealEstateEvaluator:
         criteria = []
         red_flags = []
         green_flags = []
+        recommendations = []
+
+        # Check for suspicious pricing first
+        self._check_suspicious_price(listing, red_flags, recommendations)
 
         # 1. Surface & Loi Carrez
         surface_score = self._evaluate_surface(listing, red_flags, green_flags)
@@ -342,6 +346,57 @@ class FrenchRealEstateEvaluator:
             details=" | ".join(details),
             recommendations=recommendations,
         )
+
+    # Average market prices per m² by department (approximate 2024-2025)
+    # Used to detect suspiciously low prices
+    AVG_PRICE_PER_SQM = {
+        "75": 10500,  # Paris
+        "92": 6500,   # Hauts-de-Seine
+        "93": 4200,   # Seine-Saint-Denis
+        "94": 5200,   # Val-de-Marne
+        "91": 3200,   # Essonne
+        "95": 3500,   # Val-d'Oise
+        "77": 3000,   # Seine-et-Marne
+        "78": 4200,   # Yvelines
+    }
+
+    # Threshold for suspicious price (percentage of average)
+    SUSPICIOUS_PRICE_THRESHOLD = 0.70  # Flag if < 70% of average
+
+    def _check_suspicious_price(
+        self, listing: Listing, red_flags: list, recommendations: list
+    ) -> bool:
+        """Check if the price is suspiciously low for the area.
+        
+        Returns True if the price is suspicious.
+        """
+        postal = listing.address.postal_code or ""
+        dept = postal[:2] if postal else ""
+        
+        avg_price = self.AVG_PRICE_PER_SQM.get(dept)
+        if not avg_price:
+            return False
+        
+        price_per_sqm = listing.price_per_sqm
+        if not price_per_sqm or price_per_sqm <= 0:
+            return False
+        
+        threshold = avg_price * self.SUSPICIOUS_PRICE_THRESHOLD
+        
+        if price_per_sqm < threshold:
+            pct_of_avg = (price_per_sqm / avg_price) * 100
+            red_flags.append(
+                f"Suspiciously low price ({price_per_sqm:,.0f}€/m² = {pct_of_avg:.0f}% of avg {avg_price:,}€/m²)"
+            )
+            recommendations.append(
+                "⚠️ Price significantly below market - verify condition, location, legal issues"
+            )
+            recommendations.append(
+                "Check for: viager, occupied property, major works needed, flood zone, noise"
+            )
+            return True
+        
+        return False
 
     # Approximate commute times to central Paris (in minutes)
     # Based on RER/Metro/Transilien typical journey times
@@ -551,6 +606,23 @@ class FrenchRealEstateEvaluator:
         city = listing.address.city
         postal = listing.address.postal_code
         details.append(f"{city} ({postal})")
+
+        # Get commute time estimate
+        commute_time = self.get_commute_time(city, postal)
+        
+        # Add commute time to details and check for red flag
+        if commute_time is not None:
+            details.append(f"~{commute_time}min to Paris")
+            if commute_time > 35:
+                score -= 15
+                status = "⚠️"
+                red_flags.append(f"Long commute ({commute_time}min to Paris)")
+                recommendations.append(
+                    f"Consider commute impact: ~{commute_time}min each way = {commute_time * 2}min/day"
+                )
+            elif commute_time <= 20:
+                score += 5
+                green_flags.append(f"Short commute (~{commute_time}min to Paris)")
 
         # Street info
         if listing.address.street:

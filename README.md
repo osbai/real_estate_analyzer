@@ -32,21 +32,83 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-### Search for Listings on SeLoger
+### 1. Search for Listings on SeLoger
 
 Find listings matching your criteria directly from SeLoger search results:
 
 ```bash
-# Edit the URL in the script or pass it as an argument
-python scripts/search_seloger.py
+# Copy a SeLoger search URL to your clipboard, then run:
+python scripts/search_seloger.py --all-pages
 
-# The script extracts all listing URLs from the search results page
+# Results are cached automatically
 # Example output:
-# Found 31 listing URLs:
-#  1. https://www.seloger.com/annonces/achat/appartement/acheres-78/260450577.htm
-#  2. https://www.seloger.com/annonces/achat/appartement/argenteuil-95/258831099.htm
-#  ...
+# ✅ Saved 64 listings to: .cache/searches/seloger_search_20260222_213842_0dda2d10.json
 ```
+
+### 2. Generate Investment Report
+
+Analyze and export all listings with investment metrics:
+
+```bash
+# Generate investment report (sorted by cash flow, filtered by quality)
+python scripts/compare_listings.py \
+  --from-cache "seloger_search_20260222_213842_0dda2d10.json" \
+  --investment \
+  --export investment_report.csv
+```
+
+The CSV includes: Price, Total Cost, Rent, Gross Yield, Net Yield, Cash Flow, Score, DPE, and URL for each listing.
+
+### Automatic Filters
+
+By default, listings are automatically filtered to show only quality investments:
+
+| Filter | Description | Override |
+|--------|-------------|----------|
+| 🚩 Red flags | Excludes DPE G/F, long commutes, etc. | `--include-all` |
+| 🗺️ Île-de-France only | Excludes listings outside IDF | - |
+| ❓ Unknown cities | Excludes listings with no city | - |
+| 🚇 Commute time | Filter by max commute to Paris | `--max-commute 30` |
+
+### Sorting
+
+| Mode | Default Sort | Description |
+|------|--------------|-------------|
+| Standard | Score | Best quality first |
+| `--investment` | **Cash Flow** | Highest positive cash flow first |
+| `--sort yield` | Gross Yield | Highest yield first |
+| `--sort value` | Value Score | Best bang for buck first |
+
+### Additional Options
+
+```bash
+# Filter by max commute time to Paris (in minutes)
+python scripts/compare_listings.py --from-cache "search.json" --investment --max-commute 30
+
+# Include listings with red flags (DPE issues, long commute, etc.)
+python scripts/compare_listings.py --from-cache "search.json" --include-all
+
+# Limit number of listings to analyze
+python scripts/compare_listings.py --from-cache "search.json" --limit 10
+
+# Sort by different criteria
+python scripts/compare_listings.py --from-cache "search.json" --sort yield
+python scripts/compare_listings.py --from-cache "search.json" --sort value
+python scripts/compare_listings.py --from-cache "search.json" --sort price
+```
+
+### Red Flags (Automatic Detection)
+
+The following issues are detected and flagged:
+
+| Red Flag | Description |
+|----------|-------------|
+| DPE G | Cannot be legally rented (banned since 2025) |
+| DPE F | Rental ban coming in 2028 |
+| Long commute | > 35 minutes to Paris |
+| Remote location | Poor transport connectivity |
+| Ground floor (RDC) | Security/noise concerns |
+| Ongoing procedures | Legal issues in building |
 
 ### Compare Listings from Multiple Sources
 
