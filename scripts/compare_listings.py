@@ -748,6 +748,13 @@ def main():
         action="store_true",
         help="Include listings with red flags (by default, only clean listings are shown)",
     )
+    parser.add_argument(
+        "--max-commute",
+        type=int,
+        default=None,
+        metavar="MINUTES",
+        help="Filter listings by max commute time to Paris (e.g., --max-commute 30)",
+    )
 
     args = parser.parse_args()
 
@@ -797,6 +804,30 @@ def main():
         if not analyses:
             print("\n❌ No clean listings remaining after filtering.")
             print("   Use --include-all to see all listings including those with red flags.")
+            sys.exit(1)
+
+    # Filter by commute time if specified
+    if args.max_commute:
+        evaluator = FrenchRealEstateEvaluator()
+        total_before = len(analyses)
+        filtered_analyses = []
+        for a in analyses:
+            commute = evaluator.get_commute_time(
+                a.listing.address.city, a.listing.address.postal_code
+            )
+            if commute is not None and commute <= args.max_commute:
+                filtered_analyses.append(a)
+        
+        filtered_count = total_before - len(filtered_analyses)
+        analyses = filtered_analyses
+        
+        if filtered_count > 0:
+            print(f"\n🚇 Filtered out {filtered_count} listings with commute > {args.max_commute}min")
+            print(f"   → Showing {len(analyses)} listings within {args.max_commute}min of Paris")
+
+        if not analyses:
+            print(f"\n❌ No listings found with commute time ≤ {args.max_commute}min.")
+            print("   Try increasing --max-commute or removing the filter.")
             sys.exit(1)
 
     # Run investment analysis if requested or if sorting by yield
