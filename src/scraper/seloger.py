@@ -43,11 +43,11 @@ class SeLogerScraper(BaseScraper):
     # Alternative pattern for newer URLs
     ID_PATTERN_ALT = re.compile(r"/(\d{6,})(?:\.htm)?(?:\?|$)", re.IGNORECASE)
 
-    def __init__(self, mode: FetchMode = FetchMode.SIMPLE, **kwargs):
+    def __init__(self, mode: FetchMode = FetchMode.REQUESTS, **kwargs):
         """Initialize SeLoger scraper.
 
         Args:
-            mode: SIMPLE (httpx) or HEADLESS (Playwright for JS rendering)
+            mode: REQUESTS (cloudscraper - default), SIMPLE (httpx), or HEADLESS (Playwright)
             **kwargs: Additional arguments passed to BaseScraper
         """
         super().__init__(mode=mode, **kwargs)
@@ -691,33 +691,38 @@ class SeLogerScraper(BaseScraper):
         # === Enrich data from description ===
         building_data = {}
         transport_data = {}
-        
+
         if description:
             desc_parsed = DescriptionParser.parse(description)
-            
+
             # Merge description-extracted features
             if "features" in desc_parsed:
                 for key, value in desc_parsed["features"].items():
                     if key not in features_data or features_data.get(key) is None:
                         features_data[key] = value
-            
+
             # Extract building info
             if "building" in desc_parsed:
                 building_data = desc_parsed["building"]
-            
+
             # Extract transport info
             if "transport" in desc_parsed:
                 transport_data = desc_parsed["transport"]
-            
+
             # Extract annual charges
-            if "price_info" in desc_parsed and "annual_charges" in desc_parsed["price_info"]:
-                price_data["annual_charges"] = desc_parsed["price_info"]["annual_charges"]
-            
+            if (
+                "price_info" in desc_parsed
+                and "annual_charges" in desc_parsed["price_info"]
+            ):
+                price_data["annual_charges"] = desc_parsed["price_info"][
+                    "annual_charges"
+                ]
+
             # Extract agency name if not already found
             if "agent" in desc_parsed and desc_parsed["agent"].get("agency"):
                 if not agent_data.get("agency"):
                     agent_data["agency"] = desc_parsed["agent"]["agency"]
-            
+
             # Extract street if not already found
             if "address" in desc_parsed and desc_parsed["address"].get("street"):
                 if not address_data.get("street"):

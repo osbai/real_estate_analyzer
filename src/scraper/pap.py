@@ -42,11 +42,12 @@ class PAPScraper(BaseScraper):
     # Alternative pattern
     ID_PATTERN_ALT = re.compile(r"/(\d{7,})(?:\?|$)", re.IGNORECASE)
 
-    def __init__(self, mode: FetchMode = FetchMode.SIMPLE, **kwargs):
+    def __init__(self, mode: FetchMode = FetchMode.REQUESTS, **kwargs):
         """Initialize PAP scraper.
 
         Args:
-            mode: SIMPLE (httpx) or HEADLESS (Playwright for JS rendering)
+            mode: REQUESTS (simple requests library - default), SIMPLE (httpx),
+                  or HEADLESS (Playwright for JS rendering)
             **kwargs: Additional arguments passed to BaseScraper
         """
         super().__init__(mode=mode, **kwargs)
@@ -109,18 +110,39 @@ class PAPScraper(BaseScraper):
         neighborhood = None
         street = None
 
+        # PAP often shows location in the title with format "... Montrouge (92120)"
+        title = soup.find("h1") or soup.find("title")
+        if title:
+            title_text = title.get_text()
+            # Match pattern: "City (PostalCode)" at end of title
+            loc_match = re.search(r"([A-Za-zÀ-ÿ\-\s]+?)\s*\((\d{5})\)", title_text)
+            if loc_match:
+                city = loc_match.group(1).strip()
+                postal_code = loc_match.group(2)
+
+        # Also check og:title meta tag
+        if not city:
+            og_title = soup.find("meta", property="og:title")
+            if og_title:
+                og_text = og_title.get("content", "")
+                loc_match = re.search(r"([A-Za-zÀ-ÿ\-\s]+?)\s*\((\d{5})\)", og_text)
+                if loc_match:
+                    city = loc_match.group(1).strip()
+                    postal_code = loc_match.group(2)
+
         # PAP typically shows location in the heading or breadcrumb
-        location_el = soup.find(
-            class_=re.compile(r"item-geoloc|location|locality", re.I)
-        )
-        if location_el:
-            loc_text = location_el.get_text()
-            # Format is often "Paris 11e (75011)" or "Montrouge (92120)"
-            postal_code = extract_postal_code(loc_text)
-            # Extract city name before postal code
-            city_match = re.match(r"([^(]+)", loc_text)
-            if city_match:
-                city = city_match.group(1).strip()
+        if not city:
+            location_el = soup.find(
+                class_=re.compile(r"item-geoloc|location|locality", re.I)
+            )
+            if location_el:
+                loc_text = location_el.get_text()
+                # Format is often "Paris 11e (75011)" or "Montrouge (92120)"
+                postal_code = extract_postal_code(loc_text)
+                # Extract city name before postal code
+                city_match = re.match(r"([^(]+)", loc_text)
+                if city_match:
+                    city = city_match.group(1).strip()
 
         # Try breadcrumb
         if not city:
@@ -134,25 +156,15 @@ class PAPScraper(BaseScraper):
                     elif len(text.split()) <= 3 and not re.match(r"^\d+$", text):
                         city = text
 
-        # Try title
-        if not city:
-            title = soup.find("h1")
-            if title:
-                title_text = title.get_text()
-                # Look for city pattern: "Appartement 3 pièces Paris 11e"
-                city_match = re.search(
-                    r"(?:à|a)\s+([A-Za-zÀ-ÿ\-\s]+?)(?:\s+\d|$|\()", title_text
-                )
-                if city_match:
-                    city = city_match.group(1).strip()
-                # Also check for arrondissement in Paris
-                arrond_match = re.search(r"Paris\s*(\d{1,2})e?", title_text, re.I)
-                if arrond_match:
-                    city = f"Paris {arrond_match.group(1)}e"
-                    if not postal_code:
-                        # Generate Paris postal code
-                        arrond = int(arrond_match.group(1))
-                        postal_code = f"750{arrond:02d}"
+        # Also check for arrondissement in Paris
+        if city:
+            arrond_match = re.search(r"Paris\s*(\d{1,2})e?", city, re.I)
+            if arrond_match:
+                city = f"Paris {arrond_match.group(1)}e"
+                if not postal_code:
+                    # Generate Paris postal code
+                    arrond = int(arrond_match.group(1))
+                    postal_code = f"750{arrond:02d}"
 
         # Extract department from postal code
         department = postal_code[:2] if len(postal_code) >= 2 else None
@@ -489,8 +501,13 @@ class PAPScraper(BaseScraper):
                 transport_data = desc_parsed["transport"]
 
             # Extract annual charges
-            if "price_info" in desc_parsed and "annual_charges" in desc_parsed["price_info"]:
-                price_data["annual_charges"] = desc_parsed["price_info"]["annual_charges"]
+            if (
+                "price_info" in desc_parsed
+                and "annual_charges" in desc_parsed["price_info"]
+            ):
+                price_data["annual_charges"] = desc_parsed["price_info"][
+                    "annual_charges"
+                ]
 
             # Extract street if not already found
             if "address" in desc_parsed and desc_parsed["address"].get("street"):

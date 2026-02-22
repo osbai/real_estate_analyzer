@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
+import cloudscraper
 import httpx
 import requests
 from bs4 import BeautifulSoup
@@ -417,37 +418,55 @@ class HTTPClient:
 
 
 class RequestsClient:
-    """Simple HTTP client using requests library.
+    """HTTP client using cloudscraper to bypass anti-bot measures.
 
-    Mimics the approach from the old seloger_scraper.py - straightforward
-    requests with basic headers, no fancy anti-bot measures.
+    Uses cloudscraper which can bypass Cloudflare and similar protections
+    by handling JavaScript challenges and TLS fingerprinting.
     """
 
-    DEFAULT_HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate",  # Removed 'br' (Brotli) - not supported by requests
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-    }
-
     def __init__(self, timeout: float = 30.0):
-        """Initialize simple requests client.
+        """Initialize cloudscraper client.
 
         Args:
             timeout: Request timeout in seconds
         """
         self.timeout = timeout
-        self.session = requests.Session()
-        self.session.headers.update(self.DEFAULT_HEADERS)
+        # Use cloudscraper which handles anti-bot protection
+        self.session = cloudscraper.create_scraper(
+            browser={
+                "browser": "chrome",
+                "platform": "darwin",
+                "mobile": False,
+            },
+            delay=1,  # Small delay between requests
+        )
+        self._visited_sites: set = set()
+
+    def _get_domain(self, url: str) -> str:
+        """Extract domain from URL."""
+        return urlparse(url).netloc
+
+    def _warm_up_session(self, url: str) -> None:
+        """Visit the homepage first to get cookies, simulating natural browsing."""
+        domain = self._get_domain(url)
+        if domain in self._visited_sites:
+            return
+
+        # Visit the homepage to get cookies
+        parsed = urlparse(url)
+        homepage = f"{parsed.scheme}://{parsed.netloc}/"
+
+        try:
+            self.session.get(homepage, timeout=self.timeout)
+            self._visited_sites.add(domain)
+            # Small delay to appear more human
+            time.sleep(random.uniform(0.5, 1.5))
+        except requests.exceptions.RequestException:
+            # Ignore errors on warmup, proceed anyway
+            pass
 
     def fetch(self, url: str, timeout: Optional[float] = None) -> str:
-        """Fetch URL using simple requests.
+        """Fetch URL using cloudscraper to bypass anti-bot measures.
 
         Args:
             url: URL to fetch
@@ -460,6 +479,9 @@ class RequestsClient:
             FetchError: If unable to fetch the URL
         """
         try:
+            # Warm up session with cookies from homepage
+            self._warm_up_session(url)
+
             response = self.session.get(url, timeout=timeout or self.timeout)
             response.raise_for_status()
             return response.text
@@ -470,6 +492,9 @@ class RequestsClient:
             elif e.response.status_code == 429:
                 raise RateLimitError(f"Rate limited (429) for {url}") from e
             raise FetchError(f"HTTP error fetching {url}: {e}") from e
+
+        except cloudscraper.exceptions.CloudflareChallengeError as e:
+            raise BlockedError(f"Cloudflare challenge failed for {url}: {e}") from e
 
         except requests.exceptions.RequestException as e:
             raise FetchError(f"Request error fetching {url}: {e}") from e
