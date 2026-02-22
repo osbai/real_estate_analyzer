@@ -42,12 +42,12 @@ class PAPScraper(BaseScraper):
     # Alternative pattern
     ID_PATTERN_ALT = re.compile(r"/(\d{7,})(?:\?|$)", re.IGNORECASE)
 
-    def __init__(self, mode: FetchMode = FetchMode.REQUESTS, **kwargs):
+    def __init__(self, mode: FetchMode = FetchMode.CLOUDSCRAPER, **kwargs):
         """Initialize PAP scraper.
 
         Args:
-            mode: REQUESTS (simple requests library - default), SIMPLE (httpx),
-                  or HEADLESS (Playwright for JS rendering)
+            mode: CLOUDSCRAPER (default - bypasses Cloudflare), REQUESTS,
+                  SIMPLE (httpx), or HEADLESS (Playwright)
             **kwargs: Additional arguments passed to BaseScraper
         """
         super().__init__(mode=mode, **kwargs)

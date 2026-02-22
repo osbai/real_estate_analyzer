@@ -72,16 +72,17 @@ python scripts/test_scraper.py "https://www.seloger.com/annonces/..." --mode hea
 
 | Mode | Library | Description | Best For |
 |------|---------|-------------|----------|
-| `requests` | cloudscraper | Bypasses Cloudflare/anti-bot | **Default** - PAP, most sites |
-| `simple` | httpx | Fast, lightweight | Cached pages, testing |
+| `requests` | requests | Plain HTTP requests | **SeLoger** (default) |
+| `cloudscraper` | cloudscraper | Bypasses Cloudflare/anti-bot | **PAP** (default) |
+| `simple` | httpx | Async-capable HTTP client | Testing |
 | `headless` | Playwright | Full browser rendering | JS-heavy pages, captchas |
 
 ### Supported Sites
 
-| Site | Status | Notes |
-|------|--------|-------|
-| **PAP.fr** | ✅ Working | Uses cloudscraper, reliable |
-| **SeLoger.com** | ⚠️ Protected | Strong anti-bot (Cloudflare + CAPTCHA). Works with cached pages or headless mode |
+| Site | Default Mode | Status | Notes |
+|------|--------------|--------|-------|
+| **PAP.fr** | `cloudscraper` | ✅ Working | Bypasses Cloudflare protection |
+| **SeLoger.com** | `requests` | ✅ Working | Plain requests with session cookies |
 
 ## Evaluation Criteria
 

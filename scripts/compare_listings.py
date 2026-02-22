@@ -65,6 +65,7 @@ def fetch_listing(url: str, mode: str = "requests") -> Optional[Listing]:
     """Fetch and parse a listing from URL."""
     fetch_mode = {
         "requests": FetchMode.REQUESTS,
+        "cloudscraper": FetchMode.CLOUDSCRAPER,
         "simple": FetchMode.SIMPLE,
         "headless": FetchMode.HEADLESS,
     }.get(mode, FetchMode.REQUESTS)

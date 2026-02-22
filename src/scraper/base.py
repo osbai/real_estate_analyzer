@@ -22,7 +22,8 @@ from src.models.listing import EnergyClass, GESClass, Listing
 class FetchMode(str, Enum):
     """Mode for fetching web pages."""
 
-    REQUESTS = "requests"  # Use requests (simple, like old scraper)
+    REQUESTS = "requests"  # Use plain requests library (for SeLoger)
+    CLOUDSCRAPER = "cloudscraper"  # Use cloudscraper (for PAP - bypasses Cloudflare)
     SIMPLE = "simple"  # Use httpx (async-capable, no JS)
     HEADLESS = "headless"  # Use Playwright (slower, renders JS)
 
@@ -418,10 +419,109 @@ class HTTPClient:
 
 
 class RequestsClient:
+    """Simple HTTP client using plain requests library.
+
+    Used for sites like SeLoger that work with basic requests.
+    """
+
+    DEFAULT_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+    }
+
+    def __init__(self, timeout: float = 30.0):
+        """Initialize plain requests client.
+
+        Args:
+            timeout: Request timeout in seconds
+        """
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update(self.DEFAULT_HEADERS)
+        self._visited_sites: set = set()
+
+    def _get_domain(self, url: str) -> str:
+        """Extract domain from URL."""
+        return urlparse(url).netloc
+
+    def _warm_up_session(self, url: str) -> None:
+        """Visit the homepage first to get cookies."""
+        domain = self._get_domain(url)
+        if domain in self._visited_sites:
+            return
+
+        parsed = urlparse(url)
+        homepage = f"{parsed.scheme}://{parsed.netloc}/"
+
+        try:
+            self.session.get(homepage, timeout=self.timeout)
+            self._visited_sites.add(domain)
+            time.sleep(random.uniform(0.3, 0.8))
+        except requests.exceptions.RequestException:
+            pass
+
+    def fetch(self, url: str, timeout: Optional[float] = None) -> str:
+        """Fetch URL using plain requests.
+
+        Args:
+            url: URL to fetch
+            timeout: Request timeout (uses default if not provided)
+
+        Returns:
+            HTML content as string
+
+        Raises:
+            FetchError: If unable to fetch the URL
+        """
+        try:
+            self._warm_up_session(url)
+
+            response = self.session.get(url, timeout=timeout or self.timeout)
+            response.raise_for_status()
+            return response.text
+
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                raise BlockedError(f"Access forbidden (403) for {url}") from e
+            elif e.response.status_code == 429:
+                raise RateLimitError(f"Rate limited (429) for {url}") from e
+            raise FetchError(f"HTTP error fetching {url}: {e}") from e
+
+        except requests.exceptions.RequestException as e:
+            raise FetchError(f"Request error fetching {url}: {e}") from e
+
+    def close(self) -> None:
+        """Close the session."""
+        self.session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+# === Cloudscraper Client ===
+
+
+class CloudscraperClient:
     """HTTP client using cloudscraper to bypass anti-bot measures.
 
-    Uses cloudscraper which can bypass Cloudflare and similar protections
-    by handling JavaScript challenges and TLS fingerprinting.
+    Used for sites like PAP that have Cloudflare protection.
+    Handles JavaScript challenges and TLS fingerprinting.
     """
 
     def __init__(self, timeout: float = 30.0):
@@ -431,14 +531,13 @@ class RequestsClient:
             timeout: Request timeout in seconds
         """
         self.timeout = timeout
-        # Use cloudscraper which handles anti-bot protection
         self.session = cloudscraper.create_scraper(
             browser={
                 "browser": "chrome",
                 "platform": "darwin",
                 "mobile": False,
             },
-            delay=1,  # Small delay between requests
+            delay=1,
         )
         self._visited_sites: set = set()
 
@@ -447,22 +546,19 @@ class RequestsClient:
         return urlparse(url).netloc
 
     def _warm_up_session(self, url: str) -> None:
-        """Visit the homepage first to get cookies, simulating natural browsing."""
+        """Visit the homepage first to get cookies."""
         domain = self._get_domain(url)
         if domain in self._visited_sites:
             return
 
-        # Visit the homepage to get cookies
         parsed = urlparse(url)
         homepage = f"{parsed.scheme}://{parsed.netloc}/"
 
         try:
             self.session.get(homepage, timeout=self.timeout)
             self._visited_sites.add(domain)
-            # Small delay to appear more human
             time.sleep(random.uniform(0.5, 1.5))
         except requests.exceptions.RequestException:
-            # Ignore errors on warmup, proceed anyway
             pass
 
     def fetch(self, url: str, timeout: Optional[float] = None) -> str:
@@ -479,7 +575,6 @@ class RequestsClient:
             FetchError: If unable to fetch the URL
         """
         try:
-            # Warm up session with cookies from homepage
             self._warm_up_session(url)
 
             response = self.session.get(url, timeout=timeout or self.timeout)
@@ -1213,21 +1308,25 @@ class BaseScraper(ABC):
         cache_manager: Optional[CacheManager] = None,
         http_client: Optional[HTTPClient] = None,
         requests_client: Optional[RequestsClient] = None,
+        cloudscraper_client: Optional[CloudscraperClient] = None,
         headless_client: Optional[HeadlessBrowserClient] = None,
     ):
         """Initialize scraper with fetch mode.
 
         Args:
-            mode: REQUESTS (simple), SIMPLE (httpx), or HEADLESS (Playwright)
+            mode: REQUESTS (plain requests), CLOUDSCRAPER (for Cloudflare bypass),
+                  SIMPLE (httpx), or HEADLESS (Playwright)
             cache_manager: Custom cache manager
             http_client: Custom HTTP client (for SIMPLE mode)
             requests_client: Custom requests client (for REQUESTS mode)
+            cloudscraper_client: Custom cloudscraper client (for CLOUDSCRAPER mode)
             headless_client: Custom headless browser client (for HEADLESS mode)
         """
         self.mode = mode
         self.cache = cache_manager or CacheManager()
         self._http: Optional[HTTPClient] = http_client
         self._requests: Optional[RequestsClient] = requests_client
+        self._cloudscraper: Optional[CloudscraperClient] = cloudscraper_client
         self._headless: Optional[HeadlessBrowserClient] = headless_client
 
     @property
@@ -1243,6 +1342,13 @@ class BaseScraper(ABC):
         if self._requests is None:
             self._requests = RequestsClient()
         return self._requests
+
+    @property
+    def cloudscraper_client(self) -> CloudscraperClient:
+        """Lazy initialization of cloudscraper client."""
+        if self._cloudscraper is None:
+            self._cloudscraper = CloudscraperClient()
+        return self._cloudscraper
 
     @property
     def headless(self) -> HeadlessBrowserClient:
@@ -1271,6 +1377,8 @@ class BaseScraper(ABC):
 
         if self.mode == FetchMode.HEADLESS:
             html = self.headless.fetch(url, wait_for_selector=wait_for_selector)
+        elif self.mode == FetchMode.CLOUDSCRAPER:
+            html = self.cloudscraper_client.fetch(url)
         elif self.mode == FetchMode.REQUESTS:
             html = self.requests_client.fetch(url)
         else:  # SIMPLE mode

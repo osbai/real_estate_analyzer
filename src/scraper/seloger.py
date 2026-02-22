@@ -47,7 +47,8 @@ class SeLogerScraper(BaseScraper):
         """Initialize SeLoger scraper.
 
         Args:
-            mode: REQUESTS (cloudscraper - default), SIMPLE (httpx), or HEADLESS (Playwright)
+            mode: REQUESTS (plain requests - default), CLOUDSCRAPER,
+                  SIMPLE (httpx), or HEADLESS (Playwright)
             **kwargs: Additional arguments passed to BaseScraper
         """
         super().__init__(mode=mode, **kwargs)

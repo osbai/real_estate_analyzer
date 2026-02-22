@@ -46,7 +46,8 @@ def test_from_url(
 ):
     """Test scraping from a URL."""
     mode_display = {
-        "requests": "REQUESTS (simple requests library)",
+        "requests": "REQUESTS (plain requests library)",
+        "cloudscraper": "CLOUDSCRAPER (bypasses Cloudflare)",
         "simple": "SIMPLE (httpx with anti-bot)",
         "headless": "HEADLESS (Playwright browser)",
     }
@@ -76,6 +77,7 @@ def test_from_url(
     # Get appropriate scraper
     fetch_mode = {
         "requests": FetchMode.REQUESTS,
+        "cloudscraper": FetchMode.CLOUDSCRAPER,
         "simple": FetchMode.SIMPLE,
         "headless": FetchMode.HEADLESS,
     }.get(mode, FetchMode.SIMPLE)
@@ -327,9 +329,9 @@ def main():
     parser.add_argument(
         "--mode",
         "-m",
-        choices=["requests", "simple", "headless"],
+        choices=["requests", "cloudscraper", "simple", "headless"],
         default="simple",
-        help="Fetch mode: requests (simple), simple (httpx+anti-bot), headless (Playwright)",
+        help="Fetch mode: requests (plain), cloudscraper (Cloudflare bypass), simple (httpx), headless (Playwright)",
     )
     parser.add_argument(
         "--evaluate",
