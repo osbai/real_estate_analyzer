@@ -19,6 +19,9 @@ Usage:
 
     # Show verbose parsing details
     python scripts/test_scraper.py https://www.pap.fr/annonces/... -v
+
+    # Show full evaluation report
+    python scripts/test_scraper.py https://www.seloger.com/annonces/... --evaluate
 """
 
 import argparse
@@ -28,6 +31,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from src.evaluation import FrenchRealEstateEvaluator
 from src.scraper import CacheManager, FetchMode, get_scraper
 from src.scraper.pap import PAPScraper
 from src.scraper.seloger import SeLogerScraper
@@ -240,7 +244,10 @@ def print_listing(listing, verbose: bool = False):
         print(f"    Monthly:   {listing.price_info.charges:,} €/month")
 
     # Building info
-    if listing.building.total_lots or listing.building.has_ongoing_procedures is not None:
+    if (
+        listing.building.total_lots
+        or listing.building.has_ongoing_procedures is not None
+    ):
         print(f"\n  Building:")
         if listing.building.total_lots:
             print(f"    Lots:      {listing.building.total_lots}")
@@ -324,13 +331,20 @@ def main():
         default="simple",
         help="Fetch mode: requests (simple), simple (httpx+anti-bot), headless (Playwright)",
     )
+    parser.add_argument(
+        "--evaluate",
+        "-e",
+        action="store_true",
+        help="Run French real estate evaluation and show detailed report",
+    )
 
     args = parser.parse_args()
 
+    listing = None
     if args.file:
-        test_from_file(args.file, args.source, args.verbose)
+        listing = test_from_file(args.file, args.source, args.verbose)
     elif args.url:
-        test_from_url(
+        listing = test_from_url(
             args.url,
             args.cached_only,
             args.refresh,
@@ -344,6 +358,13 @@ def main():
             "  SeLoger: https://www.seloger.com/annonces/achat/appartement/paris-11eme-75/..."
         )
         print("  PAP:     https://www.pap.fr/annonces/appartement-paris-11e-r...")
+
+    # Run evaluation if requested and we have a listing
+    if args.evaluate and listing:
+        print("\n")
+        evaluator = FrenchRealEstateEvaluator()
+        result = evaluator.evaluate(listing)
+        print(result.to_report())
 
 
 if __name__ == "__main__":
