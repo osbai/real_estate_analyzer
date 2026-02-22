@@ -431,7 +431,7 @@ class RequestsClient:
         ),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Encoding": "gzip, deflate",  # Removed 'br' (Brotli) - not supported by requests
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
