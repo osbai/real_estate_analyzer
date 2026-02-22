@@ -155,3 +155,8 @@ real_estate_analyzer/
 ## License
 
 MIT
+
+
+CURRENT FAILURES
+
+ Extraction failed: Request error fetching https://www.seloger.com/annonces/achat/appartement/montrouge-92/259946399.htm: ('Received response with content-encoding: br, but failed to decode it.', error("brotli: decoder process called with data when 'can_accept_more_data()' is False"))

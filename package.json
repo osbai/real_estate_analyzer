@@ -1,0 +1,24 @@
+{
+  "name": "real_estate_analyzer",
+  "version": "1.0.0",
+  "description": "A comprehensive tool for scraping, evaluating, and comparing French real estate listings from SeLoger and PAP.fr.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/osbai/real_estate_analyzer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/osbai/real_estate_analyzer/issues"
+  },
+  "homepage": "https://github.com/osbai/real_estate_analyzer#readme",
+  "dependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}
