@@ -1,7 +1,7 @@
 """Scraper module - auto-detect and extract listings from French real estate sites."""
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from src.scraper.base import (
     BaseScraper,
@@ -41,12 +41,12 @@ URL_PATTERNS = {
 }
 
 
-def get_scraper(url: str, mode: FetchMode = FetchMode.SIMPLE) -> BaseScraper:
+def get_scraper(url: str, mode: Optional[FetchMode] = None) -> BaseScraper:
     """Auto-detect site from URL and return appropriate scraper.
 
     Args:
         url: The listing URL to scrape
-        mode: Fetch mode - SIMPLE (httpx) or HEADLESS (Playwright)
+        mode: Fetch mode - if None, uses scraper's default (PAP→CLOUDSCRAPER, SeLoger→REQUESTS)
 
     Returns:
         Appropriate scraper instance for the URL
@@ -67,11 +67,11 @@ def get_scraper(url: str, mode: FetchMode = FetchMode.SIMPLE) -> BaseScraper:
             if site_name == "seloger":
                 from src.scraper.seloger import SeLogerScraper
 
-                return SeLogerScraper(mode=mode)
+                return SeLogerScraper(mode=mode) if mode else SeLogerScraper()
             elif site_name == "pap":
                 from src.scraper.pap import PAPScraper
 
-                return PAPScraper(mode=mode)
+                return PAPScraper(mode=mode) if mode else PAPScraper()
 
     supported = ", ".join(URL_PATTERNS.keys())
     raise ValueError(f"Unsupported URL: {url}. Supported sites: {supported}")

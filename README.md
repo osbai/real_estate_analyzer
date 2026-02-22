@@ -37,11 +37,11 @@ pip install -r requirements.txt
 You can compare listings from both PAP and SeLoger in the same command:
 
 ```bash
-# Compare PAP and SeLoger listings side-by-side
+# Compare PAP and SeLoger listings side-by-side (with fresh fetch, no cache)
 python scripts/compare_listings.py \
   "https://www.pap.fr/annonces/appartement-montrouge-92120-r461901225" \
   "https://www.seloger.com/annonces/achat/appartement/montrouge-92/253220767.htm" \
-  --detailed
+  --detailed --no-cache
 
 # Compare multiple listings with different sort options
 python scripts/compare_listings.py \
@@ -114,10 +114,12 @@ The French Real Estate Evaluation Protocol scores listings based on 5 key criter
 python scripts/compare_listings.py URL1 URL2 URL3 [OPTIONS]
 
 Options:
-  -m, --mode      Fetch mode: requests, simple, headless (default: requests)
+  -m, --mode      Fetch mode: requests, cloudscraper, simple, headless
+                  (default: auto-detect per site - PAP→cloudscraper, SeLoger→requests)
   -s, --sort      Sort by: score, price, price_m2, surface, value (default: score)
   -d, --detailed  Show detailed side-by-side comparison
   -e, --export    Export to CSV file
+  --no-cache      Disable cache, always fetch fresh data from network
 ```
 
 ### test_scraper.py

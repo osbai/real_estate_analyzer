@@ -61,18 +61,27 @@ class ListingAnalysis:
         return self.listing.price_info.price / self.evaluation.overall_score
 
 
-def fetch_listing(url: str, mode: str = "requests") -> Optional[Listing]:
-    """Fetch and parse a listing from URL."""
-    fetch_mode = {
-        "requests": FetchMode.REQUESTS,
-        "cloudscraper": FetchMode.CLOUDSCRAPER,
-        "simple": FetchMode.SIMPLE,
-        "headless": FetchMode.HEADLESS,
-    }.get(mode, FetchMode.REQUESTS)
+def fetch_listing(url: str, mode: Optional[str] = None, use_cache: bool = True) -> Optional[Listing]:
+    """Fetch and parse a listing from URL.
+    
+    If mode is None, the scraper will use its default mode (PAP→cloudscraper, SeLoger→requests).
+    """
+    fetch_mode = None
+    if mode:
+        fetch_mode = {
+            "requests": FetchMode.REQUESTS,
+            "cloudscraper": FetchMode.CLOUDSCRAPER,
+            "simple": FetchMode.SIMPLE,
+            "headless": FetchMode.HEADLESS,
+        }.get(mode)
 
     try:
-        scraper = get_scraper(url, mode=fetch_mode)
-        listing = scraper.extract(url)
+        # If no mode specified, scraper uses its default
+        if fetch_mode:
+            scraper = get_scraper(url, mode=fetch_mode)
+        else:
+            scraper = get_scraper(url)
+        listing = scraper.extract(url, use_cache=use_cache)
         scraper.close()
         return listing
     except Exception as e:
@@ -80,8 +89,11 @@ def fetch_listing(url: str, mode: str = "requests") -> Optional[Listing]:
         return None
 
 
-def analyze_listings(urls: list[str], mode: str = "requests") -> list[ListingAnalysis]:
-    """Fetch, parse and evaluate multiple listings."""
+def analyze_listings(urls: list[str], mode: Optional[str] = None, use_cache: bool = True) -> list[ListingAnalysis]:
+    """Fetch, parse and evaluate multiple listings.
+    
+    If mode is None, each scraper uses its default mode (PAP→cloudscraper, SeLoger→requests).
+    """
     evaluator = FrenchRealEstateEvaluator()
     analyses = []
 
@@ -89,7 +101,7 @@ def analyze_listings(urls: list[str], mode: str = "requests") -> list[ListingAna
 
     for i, url in enumerate(urls, 1):
         print(f"  [{i}/{len(urls)}] {url[:60]}...")
-        listing = fetch_listing(url, mode)
+        listing = fetch_listing(url, mode, use_cache)
         if listing:
             evaluation = evaluator.evaluate(listing)
             analyses.append(ListingAnalysis(listing=listing, evaluation=evaluation))
@@ -452,9 +464,9 @@ def main():
     parser.add_argument(
         "--mode",
         "-m",
-        choices=["requests", "simple", "headless"],
-        default="requests",
-        help="Fetch mode (default: requests)",
+        choices=["requests", "cloudscraper", "simple", "headless"],
+        default=None,
+        help="Fetch mode (default: auto-detect per site - PAP uses cloudscraper, SeLoger uses requests)",
     )
     parser.add_argument(
         "--sort",
@@ -475,6 +487,11 @@ def main():
         metavar="FILE",
         help="Export comparison to CSV file",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable cache, always fetch fresh data from network",
+    )
 
     args = parser.parse_args()
 
@@ -482,7 +499,7 @@ def main():
         parser.error("Please provide at least one listing URL")
 
     # Analyze listings
-    analyses = analyze_listings(args.urls, args.mode)
+    analyses = analyze_listings(args.urls, args.mode, use_cache=not args.no_cache)
 
     if not analyses:
         print("\n❌ No listings could be analyzed.")
