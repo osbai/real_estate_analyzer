@@ -8,15 +8,18 @@ from bs4 import BeautifulSoup
 from src.models.listing import (
     Address,
     AgentInfo,
+    BuildingInfo,
     EnergyClass,
     EnergyRating,
     GESClass,
     PriceInfo,
     PropertyFeatures,
     PropertyType,
+    TransportInfo,
 )
 from src.scraper.base import (
     BaseScraper,
+    DescriptionParser,
     extract_bedrooms,
     extract_dpe_class,
     extract_floor,
@@ -101,14 +104,94 @@ class SeLogerScraper(BaseScraper):
                     r"window\.__INITIAL_STATE__\s*=\s*({.+?});",
                     r"window\.initialData\s*=\s*({.+?});",
                     r"__NEXT_DATA__\s*=\s*({.+?});",
+                    r'JSON\.parse\("(\{.+?\})"\);',  # SeLoger uses this pattern
                 ]
                 for pattern in patterns:
                     match = re.search(pattern, script.string, re.DOTALL)
                     if match:
                         try:
-                            return json.loads(match.group(1))
+                            json_str = match.group(1)
+                            # Handle escaped JSON strings
+                            if pattern.endswith('");'):
+                                json_str = json_str.encode().decode("unicode_escape")
+                            return json.loads(json_str)
                         except json.JSONDecodeError:
                             continue
+        return None
+
+    def _extract_tracking_config(self, soup: BeautifulSoup) -> Optional[dict]:
+        """Extract tracking_config from SeLoger's embedded JSON data."""
+        for script in soup.find_all("script"):
+            if script.string and "tracking_config" in script.string:
+                # SeLoger uses escaped JSON inside JSON.parse()
+                # Pattern: \"tracking_config\":{\"localite\":\"92049\",...}
+
+                # First, try to find the JSON.parse call and decode it
+                match = re.search(r'JSON\.parse\("(.+?)"\)', script.string, re.DOTALL)
+                if match:
+                    try:
+                        # The content is double-escaped, decode it
+                        json_str = match.group(1)
+                        # Replace escaped characters
+                        json_str = json_str.replace('\\"', '"')
+                        json_str = json_str.replace("\\\\", "\\")
+
+                        data = json.loads(json_str)
+
+                        # Navigate to tracking_config
+                        if isinstance(data, dict):
+                            # Try different paths
+                            if "cdp" in data and "tracking_config" in data["cdp"]:
+                                return data["cdp"]["tracking_config"]
+                            if "tracking_config" in data:
+                                return data["tracking_config"]
+                    except (json.JSONDecodeError, KeyError) as e:
+                        # Try alternative approach - extract just tracking_config
+                        pass
+
+                # Alternative: extract tracking_config directly using regex
+                # Pattern for escaped JSON: \"tracking_config\":{\"key\":\"value\",...}
+                tc_match = re.search(
+                    r'\\"tracking_config\\":\{([^}]+)\}', script.string
+                )
+                if tc_match:
+                    try:
+                        # Build JSON object from the match
+                        tc_content = tc_match.group(1)
+                        # Unescape
+                        tc_content = tc_content.replace('\\"', '"')
+                        tc_json = "{" + tc_content + "}"
+                        return json.loads(tc_json)
+                    except json.JSONDecodeError:
+                        pass
+
+        return None
+
+    def _extract_seo_data(self, soup: BeautifulSoup) -> Optional[dict]:
+        """Extract SEO metadata from SeLoger's embedded JSON."""
+        for script in soup.find_all("script"):
+            if script.string and "headInfo" in script.string:
+                match = re.search(r'JSON\.parse\("(.+?)"\)', script.string, re.DOTALL)
+                if match:
+                    try:
+                        # The content is double-escaped: \\\" for quotes
+                        json_str = match.group(1)
+                        # First pass: replace \\" with "
+                        json_str = json_str.replace('\\\\"', '"')
+                        # Handle remaining escapes
+                        json_str = json_str.replace("\\\\", "\\")
+                        # Handle unicode escapes like \\u0026
+                        json_str = json_str.encode().decode("unicode_escape")
+
+                        data = json.loads(json_str)
+                        if isinstance(data, dict):
+                            # Try different paths to headInfo
+                            if "cdp" in data and "seo" in data["cdp"]:
+                                return data["cdp"]["seo"].get("headInfo", {})
+                            if "seo" in data:
+                                return data["seo"].get("headInfo", {})
+                    except (json.JSONDecodeError, KeyError, UnicodeDecodeError):
+                        pass
         return None
 
     def _extract_property_type(
@@ -470,25 +553,175 @@ class SeLogerScraper(BaseScraper):
         """Parse SeLoger listing page and extract data."""
         # Try to get structured data first
         json_ld = self._extract_json_ld(soup)
-        initial_state = self._extract_initial_state(soup)
+        tracking_config = self._extract_tracking_config(soup)
+        seo_data = self._extract_seo_data(soup)
 
-        # Extract all components
+        # Extract listing ID
         listing_id = self._extract_listing_id(url)
-        property_type = self._extract_property_type(soup, json_ld)
-        address_data = self._extract_address_data(soup, json_ld)
-        price_data = self._extract_price_data(soup, json_ld)
-        surface = self._extract_surface_data(soup, json_ld)
-        features_data = self._extract_features(soup, json_ld)
-        energy_data = self._extract_energy_rating(soup, json_ld)
-        agent_data = self._extract_agent_info(soup)
-        description = self._extract_description(soup)
-        title = self._extract_title(soup)
+
+        # Use tracking_config as primary source if available
+        if tracking_config:
+            # Direct extraction from tracking_config
+            price = tracking_config.get("prix", 0)
+            surface = tracking_config.get("surface", 0)
+            rooms = tracking_config.get("nb_pieces")
+            bedrooms = tracking_config.get("nb_chambres")
+            postal_code = tracking_config.get("cp", "")
+            dpe_class = tracking_config.get("DPE", "")
+            floor = tracking_config.get("etage")
+
+            # Try to get exact price from SEO title (tracking_config rounds it)
+            # SEO title format: "Appartement à vendre T3/F3 60 m² 529900 € ..."
+            if seo_data:
+                seo_title = seo_data.get("title", "")
+                price_match = re.search(r"(\d[\d\s]*)\s*€", seo_title)
+                if price_match:
+                    exact_price = extract_price(price_match.group(1))
+                    if exact_price > 0:
+                        price = exact_price
+
+            # Extract city from SEO data or URL
+            city = ""
+            if seo_data:
+                title = seo_data.get("title", "")
+                # Extract city from title like "Appartement à vendre T3/F3 60 m² 529900 € Bibliothèque Municipale Montrouge (92120)"
+                city_match = re.search(r"([A-Za-zÀ-ÿ\-]+)\s*\(\d{5}\)", title)
+                if city_match:
+                    city = city_match.group(1)
+
+            if not city:
+                # Try extracting from URL
+                url_match = re.search(r"/([a-z\-]+)-\d{2}/\d+\.htm", url, re.I)
+                if url_match:
+                    city = url_match.group(1).replace("-", " ").title()
+
+            # Build address data
+            address_data = {
+                "city": city or "Unknown",
+                "postal_code": str(postal_code) if postal_code else "00000",
+                "street": None,
+                "neighborhood": None,
+                "department": str(postal_code)[:2] if postal_code else None,
+            }
+
+            # Build price data
+            price_data = {
+                "price": max(int(price), 1),
+                "charges": None,
+                "agency_fees_included": None,
+            }
+
+            # Build features
+            features_data = {
+                "rooms": rooms,
+                "bedrooms": bedrooms,
+                "floor": floor,
+            }
+
+            # Check for amenities in tracking_config commodites
+            commodites = tracking_config.get("commodites", [])
+            page_text = soup.get_text().lower()
+
+            features_data["has_elevator"] = "ascenseur" in page_text
+            features_data["has_balcony"] = "balcon" in page_text
+            features_data["has_terrace"] = "terrasse" in page_text
+            features_data["has_garden"] = "jardin" in page_text
+            features_data["has_parking"] = (
+                tracking_config.get("si_parking", 0) > 0 or "parking" in page_text
+            )
+            features_data["has_cellar"] = "cave" in commodites or "cave" in page_text
+            features_data["has_pool"] = "piscine" in page_text
+
+            # Heating type
+            if "Chauffage-individuel" in commodites:
+                features_data["heating_type"] = "Individual"
+            elif "Chauffage-collectif" in commodites:
+                features_data["heating_type"] = "Collective"
+            elif "Chauffage-electrique" in commodites:
+                features_data["heating_type"] = "Electric"
+            elif "Chauffage-gaz" in commodites:
+                features_data["heating_type"] = "Gas"
+
+            # Build energy rating
+            energy_class = EnergyClass.UNKNOWN
+            if dpe_class and dpe_class.upper() in "ABCDEFG":
+                energy_class = EnergyClass(dpe_class.upper())
+
+            energy_data = {
+                "energy_class": energy_class,
+                "ges_class": GESClass.UNKNOWN,
+                "energy_consumption": None,
+                "ges_emission": None,
+            }
+
+            # Get title from SEO data
+            title = None
+            if seo_data:
+                title = seo_data.get("title", "")
+            if not title:
+                title = self._extract_title(soup)
+
+            # Get description
+            description = self._extract_description(soup)
+
+            # Get agent info
+            agent_data = self._extract_agent_info(soup)
+
+            # Property type
+            property_type = self._extract_property_type(soup, json_ld)
+
+        else:
+            # Fallback to HTML parsing
+            property_type = self._extract_property_type(soup, json_ld)
+            address_data = self._extract_address_data(soup, json_ld)
+            price_data = self._extract_price_data(soup, json_ld)
+            surface = self._extract_surface_data(soup, json_ld)
+            features_data = self._extract_features(soup, json_ld)
+            energy_data = self._extract_energy_rating(soup, json_ld)
+            agent_data = self._extract_agent_info(soup)
+            description = self._extract_description(soup)
+            title = self._extract_title(soup)
 
         # Validate required fields
         if surface <= 0:
             raise ParseError(f"Could not extract surface area from {url}")
         if price_data["price"] <= 0:
             raise ParseError(f"Could not extract price from {url}")
+
+        # === Enrich data from description ===
+        building_data = {}
+        transport_data = {}
+        
+        if description:
+            desc_parsed = DescriptionParser.parse(description)
+            
+            # Merge description-extracted features
+            if "features" in desc_parsed:
+                for key, value in desc_parsed["features"].items():
+                    if key not in features_data or features_data.get(key) is None:
+                        features_data[key] = value
+            
+            # Extract building info
+            if "building" in desc_parsed:
+                building_data = desc_parsed["building"]
+            
+            # Extract transport info
+            if "transport" in desc_parsed:
+                transport_data = desc_parsed["transport"]
+            
+            # Extract annual charges
+            if "price_info" in desc_parsed and "annual_charges" in desc_parsed["price_info"]:
+                price_data["annual_charges"] = desc_parsed["price_info"]["annual_charges"]
+            
+            # Extract agency name if not already found
+            if "agent" in desc_parsed and desc_parsed["agent"].get("agency"):
+                if not agent_data.get("agency"):
+                    agent_data["agency"] = desc_parsed["agent"]["agency"]
+            
+            # Extract street if not already found
+            if "address" in desc_parsed and desc_parsed["address"].get("street"):
+                if not address_data.get("street"):
+                    address_data["street"] = desc_parsed["address"]["street"]
 
         # Build listing data
         return {
@@ -498,11 +731,13 @@ class SeLogerScraper(BaseScraper):
             "title": title,
             "description": description,
             "property_type": property_type,
-            "surface_area": surface,
+            "surface_area": float(surface),
             "address": Address(**address_data),
             "price_info": PriceInfo(**price_data),
             "features": PropertyFeatures(**features_data),
+            "building": BuildingInfo(**building_data),
+            "transport": TransportInfo(**transport_data),
             "energy_rating": EnergyRating(**energy_data),
             "agent": AgentInfo(**agent_data),
-            "raw_data": {"json_ld": json_ld, "initial_state": initial_state},
+            "raw_data": {"json_ld": json_ld, "tracking_config": tracking_config},
         }

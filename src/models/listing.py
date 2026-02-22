@@ -86,11 +86,45 @@ class PropertyFeatures(BaseModel):
     parking_spaces: Optional[int] = None
     has_cellar: Optional[bool] = None
     has_pool: Optional[bool] = None
+    has_fireplace: Optional[bool] = None
+    has_parquet: Optional[bool] = None
+    has_high_ceilings: Optional[bool] = None
+    has_moldings: Optional[bool] = None
+    has_equipped_kitchen: Optional[bool] = None
+    has_separate_kitchen: Optional[bool] = None
+    has_storage: Optional[bool] = None
+    has_dressing: Optional[bool] = None
+    has_alarm: Optional[bool] = None
+    has_intercom: Optional[bool] = None
+    has_digicode: Optional[bool] = None
     orientation: Optional[str] = Field(default=None, description="e.g., 'South', 'South-West'")
+    exposure: Optional[str] = Field(default=None, description="e.g., 'Double', 'Triple', 'Traversant'")
+    view: Optional[str] = Field(default=None, description="e.g., 'Garden', 'Street', 'Courtyard'")
+    luminosity: Optional[str] = Field(default=None, description="e.g., 'Very bright', 'Bright'")
     heating_type: Optional[str] = Field(default=None, description="e.g., 'Gas', 'Electric', 'Heat pump'")
     condition: Optional[str] = Field(default=None, description="e.g., 'New', 'Renovated', 'To refresh'")
     year_built: Optional[int] = None
+    building_era: Optional[str] = Field(default=None, description="e.g., 'Haussmannien', 'Années 30', 'Modern'")
     last_renovation: Optional[int] = None
+
+
+class BuildingInfo(BaseModel):
+    """Information about the building/copropriété."""
+    total_lots: Optional[int] = Field(default=None, description="Total lots in copropriété")
+    residential_lots: Optional[int] = Field(default=None, description="Residential lots count")
+    has_caretaker: Optional[bool] = None
+    has_ongoing_procedures: Optional[bool] = Field(default=None, description="Legal procedures in progress")
+    building_condition: Optional[str] = None
+
+
+class TransportInfo(BaseModel):
+    """Public transport proximity information."""
+    metro_lines: list[str] = Field(default_factory=list, description="Nearby metro lines")
+    metro_stations: list[str] = Field(default_factory=list, description="Nearby metro stations")
+    bus_lines: list[str] = Field(default_factory=list, description="Nearby bus lines")
+    rer_lines: list[str] = Field(default_factory=list, description="Nearby RER lines")
+    tram_lines: list[str] = Field(default_factory=list, description="Nearby tram lines")
+    distance_to_transport: Optional[str] = Field(default=None, description="e.g., '2 min walk'")
 
 
 class PriceInfo(BaseModel):
@@ -98,6 +132,7 @@ class PriceInfo(BaseModel):
     price: int = Field(description="Listing price in euros")
     price_per_sqm: Optional[float] = Field(default=None, description="Price per square meter")
     charges: Optional[int] = Field(default=None, description="Monthly co-ownership charges")
+    annual_charges: Optional[int] = Field(default=None, description="Annual co-ownership charges")
     property_tax: Optional[int] = Field(default=None, description="Annual property tax (taxe foncière)")
     agency_fees_included: Optional[bool] = Field(default=None, description="Whether price includes agency fees")
     agency_fees: Optional[int] = Field(default=None, description="Agency fees amount if separate")
@@ -152,6 +187,12 @@ class Listing(BaseModel):
     
     # Features
     features: PropertyFeatures = Field(default_factory=PropertyFeatures)
+    
+    # Building info
+    building: BuildingInfo = Field(default_factory=BuildingInfo)
+    
+    # Transport
+    transport: TransportInfo = Field(default_factory=TransportInfo)
     
     # Energy
     energy_rating: EnergyRating = Field(default_factory=EnergyRating)

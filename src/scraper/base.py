@@ -867,6 +867,264 @@ def extract_floor(text: str) -> Optional[int]:
     return None
 
 
+# === Description Parser ===
+
+
+class DescriptionParser:
+    """Parse French real estate descriptions to extract structured data."""
+
+    # Building era patterns
+    ERA_PATTERNS = {
+        r"haussmann": "Haussmannien",
+        r"années?\s*(\d{2})(?:s)?": lambda m: f"Années {m.group(1)}",
+        r"ann[ée]es?\s*(19\d{2}|20\d{2})": lambda m: f"Années {m.group(1)[2:]}",
+        r"immeuble\s+(?:des\s+)?années?\s*(\d{2,4})": lambda m: f"Années {m.group(1)[-2:]}",
+        r"(19\d{2}|20\d{2})": None,  # Just extract year
+        r"art\s*d[ée]co": "Art Déco",
+        r"moderne": "Modern",
+        r"récent": "Recent",
+        r"neuf": "New",
+        r"ancien": "Period",
+    }
+
+    # Condition patterns
+    CONDITION_PATTERNS = {
+        r"aucuns?\s+travaux\s+[àa]\s+pr[ée]voir": "No work needed",
+        r"travaux\s+[àa]\s+pr[ée]voir": "Work needed",
+        r"[àa]\s+r[ée]nover": "To renovate",
+        r"[àa]\s+rafra[iî]chir": "To refresh",
+        r"refait\s+[àa]\s+neuf|enti[èe]rement\s+r[ée]nov[ée]": "Fully renovated",
+        r"r[ée]nov[ée]|r[ée]fection": "Renovated",
+        r"bon\s+[ée]tat|bien\s+entretenu": "Good condition",
+        r"parfait\s+[ée]tat|excellent\s+[ée]tat": "Excellent condition",
+        r"[ée]tat\s+neuf": "Like new",
+    }
+
+    # Orientation patterns
+    ORIENTATION_PATTERNS = {
+        r"plein\s+sud": "South",
+        r"sud[\s\-]?ouest": "South-West",
+        r"sud[\s\-]?est": "South-East",
+        r"plein\s+nord": "North",
+        r"nord[\s\-]?ouest": "North-West",
+        r"nord[\s\-]?est": "North-East",
+        r"plein\s+est": "East",
+        r"plein\s+ouest": "West",
+    }
+
+    # Exposure patterns
+    EXPOSURE_PATTERNS = {
+        r"triple\s+exposition": "Triple",
+        r"double\s+exposition": "Double",
+        r"traversant": "Traversant",
+        r"mono[\s\-]?orient[ée]": "Single",
+    }
+
+    # View patterns
+    VIEW_PATTERNS = {
+        r"vue\s+(?:sur\s+)?(?:le\s+)?jardin": "Garden",
+        r"vue\s+(?:sur\s+)?(?:la\s+)?cour": "Courtyard",
+        r"vue\s+(?:sur\s+)?(?:la\s+)?rue": "Street",
+        r"vue\s+d[ée]gag[ée]e": "Open view",
+        r"vue\s+(?:sur\s+)?(?:les?\s+)?toits?": "Rooftops",
+        r"vue\s+(?:sur\s+)?(?:la\s+)?tour\s+eiffel": "Eiffel Tower",
+        r"vue\s+(?:sur\s+)?(?:le\s+)?parc": "Park",
+        r"sans\s+vis[\s\-]?[àa][\s\-]?vis": "No vis-à-vis",
+    }
+
+    @classmethod
+    def parse(cls, description: str) -> dict:
+        """Parse description and return extracted data.
+
+        Returns a dict with keys:
+        - features: PropertyFeatures fields
+        - building: BuildingInfo fields
+        - transport: TransportInfo fields
+        - price_info: PriceInfo fields (annual_charges)
+        - agent: AgentInfo fields (agency name)
+        - address: Address fields (street)
+        """
+        if not description:
+            return {}
+
+        text = description.lower()
+        result = {
+            "features": {},
+            "building": {},
+            "transport": {},
+            "price_info": {},
+            "agent": {},
+            "address": {},
+        }
+
+        # === Property Features ===
+
+        # Building era / year
+        for pattern, value in cls.ERA_PATTERNS.items():
+            match = re.search(pattern, text)
+            if match:
+                if callable(value):
+                    result["features"]["building_era"] = value(match)
+                elif value:
+                    result["features"]["building_era"] = value
+                else:
+                    # Extract year directly
+                    year = int(match.group(1))
+                    result["features"]["year_built"] = year
+                break
+
+        # Condition
+        for pattern, value in cls.CONDITION_PATTERNS.items():
+            if re.search(pattern, text):
+                result["features"]["condition"] = value
+                break
+
+        # Orientation
+        for pattern, value in cls.ORIENTATION_PATTERNS.items():
+            if re.search(pattern, text):
+                result["features"]["orientation"] = value
+                break
+
+        # Exposure
+        for pattern, value in cls.EXPOSURE_PATTERNS.items():
+            if re.search(pattern, text):
+                result["features"]["exposure"] = value
+                break
+
+        # View
+        for pattern, value in cls.VIEW_PATTERNS.items():
+            if re.search(pattern, text):
+                result["features"]["view"] = value
+                break
+
+        # Luminosity
+        if re.search(r"tr[èe]s\s+lumin", text):
+            result["features"]["luminosity"] = "Very bright"
+        elif re.search(r"lumin|clair[eté]|belle?\s+lumi[èe]re", text):
+            result["features"]["luminosity"] = "Bright"
+
+        # Interior features
+        result["features"]["has_fireplace"] = bool(re.search(r"chemin[ée]e", text))
+        result["features"]["has_parquet"] = bool(re.search(r"parquet", text))
+        result["features"]["has_high_ceilings"] = bool(
+            re.search(r"hauteur[s]?\s+(?:sous\s+)?plafond|hauts?\s+plafond", text)
+        )
+        result["features"]["has_moldings"] = bool(re.search(r"moulure", text))
+        result["features"]["has_equipped_kitchen"] = bool(
+            re.search(r"cuisine\s+(?:am[ée]nag[ée]e\s+et\s+)?[ée]quip[ée]e", text)
+        )
+        result["features"]["has_separate_kitchen"] = bool(
+            re.search(r"cuisine\s+(?:ind[ée]pendante|s[ée]par[ée]e)", text)
+        )
+        result["features"]["has_storage"] = bool(
+            re.search(r"rangement|placard", text)
+        )
+        result["features"]["has_dressing"] = bool(re.search(r"dressing", text))
+        result["features"]["has_alarm"] = bool(re.search(r"alarme", text))
+        result["features"]["has_intercom"] = bool(
+            re.search(r"interphone|visiophone", text)
+        )
+        result["features"]["has_digicode"] = bool(re.search(r"digicode", text))
+
+        # === Building Info ===
+
+        # Copropriété lots
+        lots_match = re.search(r"copropri[ée]t[ée]\s+de\s+(\d+)\s+lots?", text)
+        if lots_match:
+            result["building"]["total_lots"] = int(lots_match.group(1))
+
+        # Residential lots
+        res_lots_match = re.search(r"(\d+)\s+lots?\s+(?:d['\s])?habitation", text)
+        if res_lots_match:
+            result["building"]["residential_lots"] = int(res_lots_match.group(1))
+
+        # Caretaker
+        result["building"]["has_caretaker"] = bool(
+            re.search(r"gardien|concierge|loge", text)
+        )
+
+        # Ongoing procedures
+        if re.search(r"pas\s+de\s+proc[ée]dure|aucune\s+proc[ée]dure", text):
+            result["building"]["has_ongoing_procedures"] = False
+        elif re.search(r"proc[ée]dure\s+en\s+cours", text):
+            result["building"]["has_ongoing_procedures"] = True
+
+        # === Transport Info ===
+
+        # Metro lines
+        metro_matches = re.findall(r"m[ée]tro\s+(?:ligne\s+)?(\d+|[a-z])", text)
+        if metro_matches:
+            result["transport"]["metro_lines"] = list(set(m.upper() for m in metro_matches))
+
+        # Metro stations
+        station_match = re.search(
+            r"m[ée]tro\s+([A-Za-zÀ-ÿ\s\-]+?)(?:\s+\(|,|\.|$)", description
+        )
+        if station_match:
+            station = station_match.group(1).strip()
+            if len(station) > 2 and not station.lower().startswith("ligne"):
+                result["transport"]["metro_stations"] = [station]
+
+        # RER lines
+        rer_matches = re.findall(r"RER\s+([A-E])", text, re.IGNORECASE)
+        if rer_matches:
+            result["transport"]["rer_lines"] = list(set(m.upper() for m in rer_matches))
+
+        # Distance to transport
+        dist_match = re.search(
+            r"[àa]\s+(\d+)\s*(?:min(?:ute)?s?|m[èe]tres?)\s+(?:du?\s+)?(?:m[ée]tro|transport|bus|RER)",
+            text,
+        )
+        if dist_match:
+            result["transport"]["distance_to_transport"] = f"{dist_match.group(1)} min"
+
+        # === Price Info ===
+
+        # Annual charges
+        charges_match = re.search(
+            r"charges?\s+annuelles?\s*[:\s]*(\d[\d\s,.]*)\s*(?:€|euros?)?",
+            text,
+        )
+        if charges_match:
+            charges_str = charges_match.group(1).replace(" ", "").replace(",", ".")
+            try:
+                result["price_info"]["annual_charges"] = int(float(charges_str))
+            except ValueError:
+                pass
+
+        # === Agent Info ===
+
+        # Agency name (often at start of description)
+        agency_patterns = [
+            r"^([A-Z][A-Za-zÀ-ÿ\s&]+(?:IMMOBILIER|IMMO|AGENCY))",
+            r"([A-Z][A-Za-zÀ-ÿ\s&]+(?:IMMOBILIER|IMMO))\s+(?:vous\s+)?pr[ée]sente",
+        ]
+        for pattern in agency_patterns:
+            agency_match = re.search(pattern, description)
+            if agency_match:
+                result["agent"]["agency"] = agency_match.group(1).strip()
+                break
+
+        # === Address ===
+
+        # Street name
+        street_patterns = [
+            r"(?:situ[ée]e?\s+)?(?:au\s+)?(\d+[,\s]*(?:bis|ter)?\s*,?\s*rue\s+[A-Za-zÀ-ÿ\s\-]+)",
+            r"rue\s+([A-Za-zÀ-ÿ\s\-]+?)(?:\s*[,.]|\s+ce\s+|\s+cet|\s+dans|\s+au|\s*$)",
+        ]
+        for pattern in street_patterns:
+            street_match = re.search(pattern, description, re.IGNORECASE)
+            if street_match:
+                street = street_match.group(1).strip()
+                if len(street) > 3:
+                    result["address"]["street"] = street.title()
+                break
+
+        # Filter out empty dicts and None values
+        return {k: {kk: vv for kk, vv in v.items() if vv is not None and vv != []} 
+                for k, v in result.items() if v}
+
+
 # === Base Scraper ===
 
 

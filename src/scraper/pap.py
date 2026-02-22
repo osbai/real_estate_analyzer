@@ -7,15 +7,18 @@ from bs4 import BeautifulSoup
 from src.models.listing import (
     Address,
     AgentInfo,
+    BuildingInfo,
     EnergyClass,
     EnergyRating,
     GESClass,
     PriceInfo,
     PropertyFeatures,
     PropertyType,
+    TransportInfo,
 )
 from src.scraper.base import (
     BaseScraper,
+    DescriptionParser,
     extract_bedrooms,
     extract_dpe_class,
     extract_floor,
@@ -464,6 +467,36 @@ class PAPScraper(BaseScraper):
         if price_data["price"] <= 0:
             raise ParseError(f"Could not extract price from {url}")
 
+        # === Enrich data from description ===
+        building_data = {}
+        transport_data = {}
+
+        if description:
+            desc_parsed = DescriptionParser.parse(description)
+
+            # Merge description-extracted features
+            if "features" in desc_parsed:
+                for key, value in desc_parsed["features"].items():
+                    if key not in features_data or features_data.get(key) is None:
+                        features_data[key] = value
+
+            # Extract building info
+            if "building" in desc_parsed:
+                building_data = desc_parsed["building"]
+
+            # Extract transport info
+            if "transport" in desc_parsed:
+                transport_data = desc_parsed["transport"]
+
+            # Extract annual charges
+            if "price_info" in desc_parsed and "annual_charges" in desc_parsed["price_info"]:
+                price_data["annual_charges"] = desc_parsed["price_info"]["annual_charges"]
+
+            # Extract street if not already found
+            if "address" in desc_parsed and desc_parsed["address"].get("street"):
+                if not address_data.get("street"):
+                    address_data["street"] = desc_parsed["address"]["street"]
+
         # Build listing data
         return {
             "id": listing_id,
@@ -476,6 +509,8 @@ class PAPScraper(BaseScraper):
             "address": Address(**address_data),
             "price_info": PriceInfo(**price_data),
             "features": PropertyFeatures(**features_data),
+            "building": BuildingInfo(**building_data),
+            "transport": TransportInfo(**transport_data),
             "energy_rating": EnergyRating(**energy_data),
             "agent": AgentInfo(**agent_data),
         }

@@ -7,6 +7,7 @@ from src.scraper.base import (
     BaseScraper,
     BlockedError,
     CacheManager,
+    DescriptionParser,
     extract_bedrooms,
     extract_dpe_class,
     extract_floor,

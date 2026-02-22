@@ -170,6 +170,8 @@ def print_listing(listing, verbose: bool = False):
     print(f"\n  Address:")
     print(f"    City:      {listing.address.city}")
     print(f"    Postal:    {listing.address.postal_code}")
+    if listing.address.street:
+        print(f"    Street:    {listing.address.street}")
     if listing.address.neighborhood:
         print(f"    Area:      {listing.address.neighborhood}")
 
@@ -182,7 +184,18 @@ def print_listing(listing, verbose: bool = False):
         print(f"    Bathrooms: {listing.features.bathrooms}")
     if listing.features.floor is not None:
         print(f"    Floor:     {listing.features.floor}")
+    if listing.features.building_era:
+        print(f"    Era:       {listing.features.building_era}")
+    if listing.features.condition:
+        print(f"    Condition: {listing.features.condition}")
+    if listing.features.exposure:
+        print(f"    Exposure:  {listing.features.exposure}")
+    if listing.features.luminosity:
+        print(f"    Light:     {listing.features.luminosity}")
+    if listing.features.heating_type:
+        print(f"    Heating:   {listing.features.heating_type}")
 
+    # Amenities
     amenities = []
     if listing.features.has_elevator:
         amenities.append("elevator")
@@ -196,8 +209,56 @@ def print_listing(listing, verbose: bool = False):
         amenities.append("garden")
     if listing.features.has_cellar:
         amenities.append("cellar")
+    if listing.features.has_pool:
+        amenities.append("pool")
     if amenities:
         print(f"    Amenities: {', '.join(amenities)}")
+
+    # Interior features
+    interior = []
+    if listing.features.has_fireplace:
+        interior.append("fireplace")
+    if listing.features.has_parquet:
+        interior.append("parquet")
+    if listing.features.has_high_ceilings:
+        interior.append("high ceilings")
+    if listing.features.has_moldings:
+        interior.append("moldings")
+    if listing.features.has_equipped_kitchen:
+        interior.append("equipped kitchen")
+    if listing.features.has_separate_kitchen:
+        interior.append("separate kitchen")
+    if interior:
+        print(f"    Interior:  {', '.join(interior)}")
+
+    # Financial info
+    print(f"\n  Financial:")
+    print(f"    Price:     {listing.price_info.price:,} €")
+    if listing.price_info.annual_charges:
+        print(f"    Charges:   {listing.price_info.annual_charges:,} €/year")
+    if listing.price_info.charges:
+        print(f"    Monthly:   {listing.price_info.charges:,} €/month")
+
+    # Building info
+    if listing.building.total_lots or listing.building.has_ongoing_procedures is not None:
+        print(f"\n  Building:")
+        if listing.building.total_lots:
+            print(f"    Lots:      {listing.building.total_lots}")
+        if listing.building.has_caretaker:
+            print(f"    Caretaker: Yes")
+        if listing.building.has_ongoing_procedures is not None:
+            status = "Yes" if listing.building.has_ongoing_procedures else "No"
+            print(f"    Procedures: {status}")
+
+    # Transport info
+    if listing.transport.metro_lines or listing.transport.rer_lines:
+        print(f"\n  Transport:")
+        if listing.transport.metro_lines:
+            print(f"    Metro:     {', '.join(listing.transport.metro_lines)}")
+        if listing.transport.rer_lines:
+            print(f"    RER:       {', '.join(listing.transport.rer_lines)}")
+        if listing.transport.distance_to_transport:
+            print(f"    Distance:  {listing.transport.distance_to_transport}")
 
     print(f"\n  Energy:")
     print(f"    DPE:       {listing.energy_rating.energy_class.value}")
