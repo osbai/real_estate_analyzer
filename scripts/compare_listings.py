@@ -413,15 +413,14 @@ def print_recommendation(analyses: list[ListingAnalysis]):
     print(f"\n  🛡️ LOWEST RISK: #{lowest_risk.rank} {lowest_risk.listing.address.city}")
     print(f"     Risk: {lowest_risk.evaluation.risk_level.value}")
 
-    # Red flags summary
-    print("\n  🚩 RED FLAGS BY LISTING:")
-    for a in analyses:
-        if a.evaluation.red_flags:
+    # Red flags summary (only show if there are any)
+    listings_with_flags = [a for a in analyses if a.evaluation.red_flags]
+    if listings_with_flags:
+        print("\n  🚩 RED FLAGS:")
+        for a in listings_with_flags:
             print(
                 f"     #{a.rank} {a.listing.address.city}: {', '.join(a.evaluation.red_flags[:2])}"
             )
-        else:
-            print(f"     #{a.rank} {a.listing.address.city}: None ✓")
 
     # Final verdict
     print("\n  📝 VERDICT:")
@@ -744,6 +743,11 @@ def main():
         action="store_true",
         help="Disable cache, always fetch fresh data from network",
     )
+    parser.add_argument(
+        "--include-all",
+        action="store_true",
+        help="Include listings with red flags (by default, only clean listings are shown)",
+    )
 
     args = parser.parse_args()
 
@@ -780,6 +784,20 @@ def main():
     if not analyses:
         print("\n❌ No listings could be analyzed.")
         sys.exit(1)
+
+    # Filter out listings with red flags (unless --include-all is specified)
+    if not args.include_all:
+        total_before = len(analyses)
+        analyses = [a for a in analyses if not a.evaluation.red_flags]
+        filtered_count = total_before - len(analyses)
+        if filtered_count > 0:
+            print(f"\n🔍 Filtered out {filtered_count} listings with red flags")
+            print(f"   → Showing {len(analyses)} clean listings (use --include-all to see all)")
+
+        if not analyses:
+            print("\n❌ No clean listings remaining after filtering.")
+            print("   Use --include-all to see all listings including those with red flags.")
+            sys.exit(1)
 
     # Run investment analysis if requested or if sorting by yield
     run_investment = args.investment or args.investment_detailed or args.sort == "yield"
