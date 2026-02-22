@@ -25,6 +25,7 @@ from src.scraper.base import (
     extract_price,
     extract_rooms,
     extract_surface,
+    FetchMode,
     ParseError,
 )
 
@@ -38,6 +39,15 @@ class SeLogerScraper(BaseScraper):
     ID_PATTERN = re.compile(r"/annonces/[^/]+/(\d+)\.htm", re.IGNORECASE)
     # Alternative pattern for newer URLs
     ID_PATTERN_ALT = re.compile(r"/(\d{6,})(?:\.htm)?(?:\?|$)", re.IGNORECASE)
+
+    def __init__(self, mode: FetchMode = FetchMode.SIMPLE, **kwargs):
+        """Initialize SeLoger scraper.
+
+        Args:
+            mode: SIMPLE (httpx) or HEADLESS (Playwright for JS rendering)
+            **kwargs: Additional arguments passed to BaseScraper
+        """
+        super().__init__(mode=mode, **kwargs)
 
     def _extract_listing_id(self, url: str) -> str:
         """Extract listing ID from SeLoger URL."""

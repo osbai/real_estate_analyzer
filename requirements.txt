@@ -6,6 +6,10 @@ fake-useragent>=1.4.0
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 
+# Headless browser (optional - for JS-rendered pages)
+# Install with: pip install playwright && playwright install chromium
+playwright>=1.40.0
+
 # Data validation
 pydantic>=2.5.0
 

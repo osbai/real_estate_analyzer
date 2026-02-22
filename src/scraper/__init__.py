@@ -7,13 +7,6 @@ from src.scraper.base import (
     BaseScraper,
     BlockedError,
     CacheManager,
-    FetchError,
-    HTTPClient,
-    ParseError,
-    RateLimiter,
-    RateLimitError,
-    ScraperError,
-    ValidationError,
     extract_bedrooms,
     extract_dpe_class,
     extract_floor,
@@ -22,6 +15,16 @@ from src.scraper.base import (
     extract_price,
     extract_rooms,
     extract_surface,
+    FetchError,
+    FetchMode,
+    HeadlessBrowserClient,
+    HTTPClient,
+    ParseError,
+    RateLimiter,
+    RateLimitError,
+    RequestsClient,
+    ScraperError,
+    ValidationError,
 )
 
 if TYPE_CHECKING:
@@ -36,11 +39,12 @@ URL_PATTERNS = {
 }
 
 
-def get_scraper(url: str) -> BaseScraper:
+def get_scraper(url: str, mode: FetchMode = FetchMode.SIMPLE) -> BaseScraper:
     """Auto-detect site from URL and return appropriate scraper.
 
     Args:
         url: The listing URL to scrape
+        mode: Fetch mode - SIMPLE (httpx) or HEADLESS (Playwright)
 
     Returns:
         Appropriate scraper instance for the URL
@@ -52,17 +56,20 @@ def get_scraper(url: str) -> BaseScraper:
         >>> scraper = get_scraper("https://www.seloger.com/annonces/...")
         >>> isinstance(scraper, SeLogerScraper)
         True
+
+        >>> # Use headless browser for JS-heavy sites
+        >>> scraper = get_scraper("https://www.seloger.com/...", mode=FetchMode.HEADLESS)
     """
     for site_name, pattern in URL_PATTERNS.items():
         if pattern.search(url):
             if site_name == "seloger":
                 from src.scraper.seloger import SeLogerScraper
 
-                return SeLogerScraper()
+                return SeLogerScraper(mode=mode)
             elif site_name == "pap":
                 from src.scraper.pap import PAPScraper
 
-                return PAPScraper()
+                return PAPScraper(mode=mode)
 
     supported = ", ".join(URL_PATTERNS.keys())
     raise ValueError(f"Unsupported URL: {url}. Supported sites: {supported}")
@@ -75,7 +82,10 @@ __all__ = [
     "BaseScraper",
     "CacheManager",
     "HTTPClient",
+    "RequestsClient",
+    "HeadlessBrowserClient",
     "RateLimiter",
+    "FetchMode",
     # Exceptions
     "ScraperError",
     "FetchError",

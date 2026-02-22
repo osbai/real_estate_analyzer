@@ -24,6 +24,7 @@ from src.scraper.base import (
     extract_price,
     extract_rooms,
     extract_surface,
+    FetchMode,
     ParseError,
 )
 
@@ -37,6 +38,15 @@ class PAPScraper(BaseScraper):
     ID_PATTERN = re.compile(r"-r(\d+)(?:\?|$|/)", re.IGNORECASE)
     # Alternative pattern
     ID_PATTERN_ALT = re.compile(r"/(\d{7,})(?:\?|$)", re.IGNORECASE)
+
+    def __init__(self, mode: FetchMode = FetchMode.SIMPLE, **kwargs):
+        """Initialize PAP scraper.
+
+        Args:
+            mode: SIMPLE (httpx) or HEADLESS (Playwright for JS rendering)
+            **kwargs: Additional arguments passed to BaseScraper
+        """
+        super().__init__(mode=mode, **kwargs)
 
     def _extract_listing_id(self, url: str) -> str:
         """Extract listing ID from PAP URL."""

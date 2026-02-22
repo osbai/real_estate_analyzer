@@ -6,14 +6,24 @@ import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
+import requests
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 from src.models.listing import EnergyClass, GESClass, Listing
+
+
+class FetchMode(str, Enum):
+    """Mode for fetching web pages."""
+
+    REQUESTS = "requests"  # Use requests (simple, like old scraper)
+    SIMPLE = "simple"  # Use httpx (async-capable, no JS)
+    HEADLESS = "headless"  # Use Playwright (slower, renders JS)
 
 
 # === Exception Classes ===
@@ -84,7 +94,9 @@ class RateLimiter:
 
         # Clean old request timestamps (outside burst window)
         self._request_counts[domain] = [
-            t for t in self._request_counts[domain] if current_time - t < self._burst_window
+            t
+            for t in self._request_counts[domain]
+            if current_time - t < self._burst_window
         ]
 
         # Check if we're in burst territory
@@ -401,6 +413,298 @@ class HTTPClient:
         self.close()
 
 
+# === Simple Requests Client ===
+
+
+class RequestsClient:
+    """Simple HTTP client using requests library.
+
+    Mimics the approach from the old seloger_scraper.py - straightforward
+    requests with basic headers, no fancy anti-bot measures.
+    """
+
+    DEFAULT_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    def __init__(self, timeout: float = 30.0):
+        """Initialize simple requests client.
+
+        Args:
+            timeout: Request timeout in seconds
+        """
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update(self.DEFAULT_HEADERS)
+
+    def fetch(self, url: str, timeout: Optional[float] = None) -> str:
+        """Fetch URL using simple requests.
+
+        Args:
+            url: URL to fetch
+            timeout: Request timeout (uses default if not provided)
+
+        Returns:
+            HTML content as string
+
+        Raises:
+            FetchError: If unable to fetch the URL
+        """
+        try:
+            response = self.session.get(url, timeout=timeout or self.timeout)
+            response.raise_for_status()
+            return response.text
+
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                raise BlockedError(f"Access forbidden (403) for {url}") from e
+            elif e.response.status_code == 429:
+                raise RateLimitError(f"Rate limited (429) for {url}") from e
+            raise FetchError(f"HTTP error fetching {url}: {e}") from e
+
+        except requests.exceptions.RequestException as e:
+            raise FetchError(f"Request error fetching {url}: {e}") from e
+
+    def close(self) -> None:
+        """Close the session."""
+        self.session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+# === Headless Browser Client ===
+
+
+class HeadlessBrowserClient:
+    """Headless browser client using Playwright for JavaScript-rendered pages.
+
+    Use this when sites require JavaScript to render content (e.g., React/Vue apps).
+    Falls back to HTTPClient behavior patterns for anti-bot measures.
+    """
+
+    def __init__(
+        self,
+        headless: bool = True,
+        rate_limiter: Optional[RateLimiter] = None,
+        browser_type: str = "chromium",  # chromium, firefox, webkit
+    ):
+        """Initialize headless browser client.
+
+        Args:
+            headless: Run browser in headless mode (default True)
+            rate_limiter: Custom rate limiter (uses default if None)
+            browser_type: Browser engine to use (chromium, firefox, webkit)
+
+        Requires playwright to be installed:
+            pip install playwright
+            playwright install chromium
+        """
+        self.headless = headless
+        self.rate_limiter = rate_limiter or RateLimiter()
+        self.browser_type = browser_type
+        self._playwright = None
+        self._browser = None
+        self._context = None
+
+    def _ensure_browser(self):
+        """Lazily initialize the browser."""
+        if self._browser is not None:
+            return
+
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise ImportError(
+                "Playwright is required for headless browser mode. "
+                "Install it with: pip install playwright && playwright install chromium"
+            )
+
+        self._playwright = sync_playwright().start()
+
+        # Select browser type
+        if self.browser_type == "firefox":
+            browser_launcher = self._playwright.firefox
+        elif self.browser_type == "webkit":
+            browser_launcher = self._playwright.webkit
+        else:
+            browser_launcher = self._playwright.chromium
+
+        # Launch with realistic settings
+        self._browser = browser_launcher.launch(
+            headless=self.headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+            ],
+        )
+
+        # Create context with realistic browser fingerprint
+        self._context = self._browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            locale="fr-FR",
+            timezone_id="Europe/Paris",
+            geolocation={"latitude": 48.8566, "longitude": 2.3522},  # Paris
+            permissions=["geolocation"],
+            java_script_enabled=True,
+            extra_http_headers={
+                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+            },
+        )
+
+        # Add stealth scripts to avoid detection
+        self._context.add_init_script(
+            """
+            // Overwrite navigator.webdriver
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+
+            // Overwrite chrome automation flags
+            window.chrome = {
+                runtime: {}
+            };
+
+            // Overwrite permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+        """
+        )
+
+    def _get_domain(self, url: str) -> str:
+        """Extract domain from URL."""
+        return urlparse(url).netloc
+
+    def fetch(
+        self,
+        url: str,
+        timeout: float = 30.0,
+        wait_for_selector: Optional[str] = None,
+        wait_for_load_state: str = "networkidle",
+    ) -> str:
+        """Fetch URL using headless browser.
+
+        Args:
+            url: URL to fetch
+            timeout: Page load timeout in seconds
+            wait_for_selector: CSS selector to wait for before returning
+            wait_for_load_state: Load state to wait for:
+                - "load": Wait for load event
+                - "domcontentloaded": Wait for DOMContentLoaded
+                - "networkidle": Wait until no network activity (default)
+
+        Returns:
+            Rendered HTML content as string
+
+        Raises:
+            FetchError: If unable to fetch the URL
+            BlockedError: If blocked by anti-bot measures
+        """
+        domain = self._get_domain(url)
+
+        # Apply rate limiting
+        self.rate_limiter.wait(domain)
+
+        # Ensure browser is initialized
+        self._ensure_browser()
+
+        try:
+            # Create new page
+            page = self._context.new_page()
+
+            try:
+                # Navigate with timeout
+                page.goto(
+                    url, timeout=int(timeout * 1000), wait_until="domcontentloaded"
+                )
+
+                # Wait for specific load state
+                page.wait_for_load_state(
+                    wait_for_load_state, timeout=int(timeout * 1000)
+                )
+
+                # Optionally wait for specific element
+                if wait_for_selector:
+                    page.wait_for_selector(
+                        wait_for_selector, timeout=int(timeout * 1000)
+                    )
+
+                # Add random delay to simulate human behavior
+                time.sleep(random.uniform(0.5, 2.0))
+
+                # Scroll down a bit to trigger lazy loading
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3)")
+                time.sleep(random.uniform(0.3, 1.0))
+
+                # Get rendered HTML
+                html = page.content()
+
+                # Check for blocking indicators
+                content_lower = html.lower()
+                blocking_indicators = [
+                    "captcha",
+                    "robot",
+                    "blocked",
+                    "access denied",
+                    "cloudflare",
+                ]
+                for indicator in blocking_indicators:
+                    if indicator in content_lower:
+                        raise BlockedError(
+                            f"Blocked by anti-bot measures (detected: {indicator})"
+                        )
+
+                return html
+
+            finally:
+                page.close()
+
+        except BlockedError:
+            raise
+        except Exception as e:
+            raise FetchError(f"Headless browser failed to fetch {url}: {e}") from e
+
+    def close(self) -> None:
+        """Close browser and cleanup resources."""
+        if self._context:
+            self._context.close()
+            self._context = None
+        if self._browser:
+            self._browser.close()
+            self._browser = None
+        if self._playwright:
+            self._playwright.stop()
+            self._playwright = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
 # === Utility Functions ===
 
 
@@ -574,20 +878,72 @@ class BaseScraper(ABC):
 
     def __init__(
         self,
+        mode: FetchMode = FetchMode.SIMPLE,
         cache_manager: Optional[CacheManager] = None,
         http_client: Optional[HTTPClient] = None,
+        requests_client: Optional[RequestsClient] = None,
+        headless_client: Optional[HeadlessBrowserClient] = None,
     ):
-        self.cache = cache_manager or CacheManager()
-        self.http = http_client or HTTPClient()
+        """Initialize scraper with fetch mode.
 
-    def _fetch_html(self, url: str, use_cache: bool = True) -> str:
-        """Fetch HTML with caching support."""
+        Args:
+            mode: REQUESTS (simple), SIMPLE (httpx), or HEADLESS (Playwright)
+            cache_manager: Custom cache manager
+            http_client: Custom HTTP client (for SIMPLE mode)
+            requests_client: Custom requests client (for REQUESTS mode)
+            headless_client: Custom headless browser client (for HEADLESS mode)
+        """
+        self.mode = mode
+        self.cache = cache_manager or CacheManager()
+        self._http: Optional[HTTPClient] = http_client
+        self._requests: Optional[RequestsClient] = requests_client
+        self._headless: Optional[HeadlessBrowserClient] = headless_client
+
+    @property
+    def http(self) -> HTTPClient:
+        """Lazy initialization of HTTP client."""
+        if self._http is None:
+            self._http = HTTPClient()
+        return self._http
+
+    @property
+    def requests_client(self) -> RequestsClient:
+        """Lazy initialization of requests client."""
+        if self._requests is None:
+            self._requests = RequestsClient()
+        return self._requests
+
+    @property
+    def headless(self) -> HeadlessBrowserClient:
+        """Lazy initialization of headless browser client."""
+        if self._headless is None:
+            self._headless = HeadlessBrowserClient()
+        return self._headless
+
+    def _fetch_html(
+        self,
+        url: str,
+        use_cache: bool = True,
+        wait_for_selector: Optional[str] = None,
+    ) -> str:
+        """Fetch HTML with caching support.
+
+        Args:
+            url: URL to fetch
+            use_cache: Whether to use cached HTML
+            wait_for_selector: CSS selector to wait for (headless mode only)
+        """
         if use_cache:
             cached = self.cache.get(url)
             if cached:
                 return cached
 
-        html = self.http.fetch(url)
+        if self.mode == FetchMode.HEADLESS:
+            html = self.headless.fetch(url, wait_for_selector=wait_for_selector)
+        elif self.mode == FetchMode.REQUESTS:
+            html = self.requests_client.fetch(url)
+        else:  # SIMPLE mode
+            html = self.http.fetch(url)
 
         if use_cache:
             self.cache.set(url, html)
@@ -647,3 +1003,15 @@ class BaseScraper(ABC):
             raise ValidationError(
                 f"Error validating listing data from {url}: {e}"
             ) from e
+
+    def close(self) -> None:
+        """Clean up resources."""
+        self.http.close()
+        if self._headless:
+            self._headless.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
