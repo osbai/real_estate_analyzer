@@ -182,12 +182,53 @@ python scripts/compare_listings.py \
 
 # LeBonCoin extracts these fields:
 # - Title, price, surface area
-# - City, postal code  
+# - City, postal code
 # - DPE/GES energy ratings
 # - Rooms, bedrooms, floor
 # - Amenities (elevator, balcony, cellar, parking)
 # - Agent info (pro vs private seller)
 # - Annual charges
+```
+
+### Searching LeBonCoin
+
+Due to strict anti-bot protection on search pages, the recommended workflow is to manually save search results from your browser:
+
+**Step 1: Save search HTML from browser**
+```bash
+# 1. Open LeBonCoin search in your browser with your filters
+# 2. Right-click → "View Page Source" (or Cmd+U / Ctrl+U)
+# 3. Save the HTML to a file (e.g., leboncoin_page1.html)
+# 4. If multiple pages, repeat for each page
+```
+
+**Step 2: Extract listing URLs**
+```bash
+# Extract from a single file (replace "search.html" with your filename)
+grep -oh '"list_id":[0-9]*' search.html | sort -u | \
+  sed 's/"list_id":/https:\/\/www.leboncoin.fr\/ad\/ventes_immobilieres\//' > urls.txt
+
+# Extract from multiple files
+grep -oh '"list_id":[0-9]*' file1.html file2.html file3.html | sort -u | \
+  sed 's/"list_id":/https:\/\/www.leboncoin.fr\/ad\/ventes_immobilieres\//' > urls.txt
+```
+
+**Step 3: Analyze listings**
+```bash
+# Compare all listings with investment analysis
+cat urls.txt | xargs python scripts/compare_listings.py --investment
+
+# Export to CSV
+cat urls.txt | xargs python scripts/compare_listings.py --investment --export report.csv
+
+# Compare first 10 listings only
+python scripts/compare_listings.py $(cat urls.txt | head -10 | tr '\n' ' ') --investment
+```
+
+**Alternative: Analyze individual listings directly**
+```bash
+# Single listings work reliably without rate limiting
+python scripts/test_scraper.py "https://www.leboncoin.fr/ad/ventes_immobilieres/3149772131" --evaluate
 ```
 
 ## Evaluation Criteria

@@ -26,39 +26,39 @@ from src.models.listing import (
 )
 from src.scraper.base import (
     BaseScraper,
+    BlockedError,
     DescriptionParser,
     extract_dpe_class,
     extract_ges_class,
     extract_postal_code,
     FetchMode,
     ParseError,
-    BlockedError,
 )
 
 
 class LeBonCoinScraper(BaseScraper):
     """Scraper for LeBonCoin.fr listings.
-    
+
     Uses session-based requests with browser-like headers to bypass DataDome.
     """
 
     SOURCE_NAME = "leboncoin"
-    
+
     # Browser-like headers that work with DataDome
     HEADERS = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate', 
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
     }
 
     # URL pattern to extract listing ID
@@ -74,9 +74,10 @@ class LeBonCoinScraper(BaseScraper):
         super().__init__(mode=mode, **kwargs)
         self._session: Optional[requests.Session] = None
         self._session_initialized = False
-        
+
         # Import CacheManager from base
         from src.scraper.base import CacheManager
+
         self.cache_manager = CacheManager()
 
     def _get_session(self) -> requests.Session:
@@ -84,28 +85,31 @@ class LeBonCoinScraper(BaseScraper):
         if self._session is None:
             self._session = requests.Session()
             self._session.headers.update(self.HEADERS)
-        
+
         # Initialize session by visiting homepage first
         if not self._session_initialized:
             try:
-                self._session.get('https://www.leboncoin.fr/', timeout=10)
+                self._session.get("https://www.leboncoin.fr/", timeout=10)
                 self._session_initialized = True
             except Exception:
                 pass  # Continue anyway
-        
+
         return self._session
 
     def _fetch_html(self, url: str) -> str:
         """Fetch HTML using session-based requests."""
         session = self._get_session()
-        
+
         try:
             response = session.get(url, timeout=15)
             response.raise_for_status()
-            
-            if 'captcha' in response.text.lower() and '__NEXT_DATA__' not in response.text:
+
+            if (
+                "captcha" in response.text.lower()
+                and "__NEXT_DATA__" not in response.text
+            ):
                 raise BlockedError("Blocked by DataDome CAPTCHA")
-            
+
             return response.text
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 403:
@@ -114,12 +118,12 @@ class LeBonCoinScraper(BaseScraper):
 
     def extract(self, url: str, use_cache: bool = True):
         """Extract listing data from URL.
-        
+
         Overrides base method to use custom session-based fetching.
         """
         listing_id = self._extract_listing_id(url)
         cache_key = f"{self.SOURCE_NAME}_{listing_id}"
-        
+
         # Try cache first
         if use_cache:
             cached = self.cache_manager.get(cache_key)
@@ -127,19 +131,21 @@ class LeBonCoinScraper(BaseScraper):
                 soup = BeautifulSoup(cached, "html.parser")
                 data = self._parse(soup, url)
                 from src.models.listing import Listing
+
                 return Listing(**data)
-        
+
         # Fetch with our custom method
         html = self._fetch_html(url)
-        
+
         # Cache it
         if use_cache:
             self.cache_manager.set(cache_key, html)
-        
+
         soup = BeautifulSoup(html, "html.parser")
         data = self._parse(soup, url)
-        
+
         from src.models.listing import Listing
+
         return Listing(**data)
 
     def _extract_listing_id(self, url: str) -> str:
