@@ -5,11 +5,15 @@ Usage:
     python scripts/search_seloger.py [URL] [OPTIONS]
 
 Examples:
-    # Search with default URL
+    # Search with default URL (first page only)
     python scripts/search_seloger.py
 
     # Search with custom URL
     python scripts/search_seloger.py "https://www.seloger.com/classified-search?..."
+
+    # Fetch ALL pages (pagination)
+    python scripts/search_seloger.py --all-pages
+    python scripts/search_seloger.py --max-pages 5
 
     # Save to custom cache file
     python scripts/search_seloger.py --output my_search.json
@@ -23,10 +27,11 @@ import hashlib
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -54,6 +59,128 @@ def extract_listing_urls(html: str) -> list[str]:
             listing_urls.add(href)
 
     return sorted(listing_urls)
+
+
+def extract_total_results(html: str) -> Optional[int]:
+    """Extract total number of results from SeLoger search page."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Try to find total count in various places
+    # Pattern 1: Look for "X annonces" or "X résultats"
+    text = soup.get_text()
+    patterns = [
+        r"(\d[\d\s]*)\s*annonces?\s+trouv",
+        r"(\d[\d\s]*)\s*résultats?",
+        r"(\d[\d\s]*)\s*biens?\s+(?:à vendre|en vente)",
+        r'"totalCount"\s*:\s*(\d+)',
+        r'"nbResults"\s*:\s*(\d+)',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            count_str = match.group(1).replace(" ", "").replace("\xa0", "")
+            try:
+                return int(count_str)
+            except ValueError:
+                continue
+
+    return None
+
+
+def get_page_url(base_url: str, page: int) -> str:
+    """Generate URL for a specific page number."""
+    parsed = urlparse(base_url)
+    params = parse_qs(parsed.query)
+
+    # SeLoger uses 'page' parameter
+    params["page"] = [str(page)]
+
+    # Rebuild URL
+    new_query = urlencode(params, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def fetch_all_pages(
+    base_url: str,
+    client: RequestsClient,
+    max_pages: Optional[int] = None,
+    delay: float = 2.0,
+) -> tuple[list[str], int]:
+    """Fetch all pages of search results.
+
+    Args:
+        base_url: Base search URL
+        client: HTTP client
+        max_pages: Maximum number of pages to fetch (None for all)
+        delay: Delay between requests in seconds
+
+    Returns:
+        Tuple of (all_listing_urls, pages_fetched)
+    """
+    all_urls = set()
+    page = 1
+    pages_fetched = 0
+    total_results = None
+
+    while True:
+        # Build page URL
+        page_url = get_page_url(base_url, page)
+
+        print(f"  Page {page}: ", end="", flush=True)
+
+        try:
+            html = client.fetch(page_url)
+
+            # Check if blocked
+            if "captcha" in html.lower() or "enable JS" in html:
+                print("⚠️  Blocked (captcha)")
+                break
+
+            # Extract listings from this page
+            page_urls = extract_listing_urls(html)
+
+            if not page_urls:
+                print("No listings found (end of results)")
+                break
+
+            # Get total on first page
+            if page == 1:
+                total_results = extract_total_results(html)
+                if total_results:
+                    print(f"(~{total_results} total) ", end="")
+
+            new_urls = set(page_urls) - all_urls
+            all_urls.update(page_urls)
+            pages_fetched += 1
+
+            print(f"✓ {len(page_urls)} listings ({len(new_urls)} new)")
+
+            # Check if we've seen all these before (reached end)
+            if len(new_urls) == 0:
+                print("  → No new listings, stopping.")
+                break
+
+            # Check max pages limit
+            if max_pages and page >= max_pages:
+                print(f"  → Reached max pages limit ({max_pages})")
+                break
+
+            # Check if we have enough (estimated from total)
+            if total_results and len(all_urls) >= total_results:
+                print(f"  → Collected all {total_results} listings")
+                break
+
+            page += 1
+
+            # Rate limiting delay
+            time.sleep(delay)
+
+        except Exception as e:
+            print(f"⚠️  Error: {e}")
+            break
+
+    return sorted(all_urls), pages_fetched
 
 
 def extract_search_params(url: str) -> dict:
@@ -210,6 +337,24 @@ Examples:
         action="store_true",
         help="Output only URLs (one per line), useful for piping",
     )
+    parser.add_argument(
+        "--all-pages",
+        "-a",
+        action="store_true",
+        help="Fetch ALL pages of results (with pagination)",
+    )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="Maximum number of pages to fetch (implies --all-pages)",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=2.0,
+        help="Delay between page requests in seconds (default: 2.0)",
+    )
 
     args = parser.parse_args()
 
@@ -271,28 +416,43 @@ Examples:
 
     # Fetch new results
     url = args.url
+    use_pagination = args.all_pages or args.max_pages is not None
+
     print("Fetching search results using RequestsClient...")
     print(f"URL: {url[:80]}...")
+    if use_pagination:
+        max_pages_str = str(args.max_pages) if args.max_pages else "unlimited"
+        print(f"Pagination: enabled (max pages: {max_pages_str}, delay: {args.delay}s)")
     print()
 
     client = RequestsClient()
 
     try:
-        html = client.fetch(url)
-        print(f"Fetched {len(html)} bytes")
+        if use_pagination:
+            # Fetch all pages
+            print("Fetching pages:")
+            listing_urls, pages_fetched = fetch_all_pages(
+                url,
+                client,
+                max_pages=args.max_pages,
+                delay=args.delay,
+            )
+            print(f"\n✓ Fetched {pages_fetched} pages, found {len(listing_urls)} unique listings")
+        else:
+            # Single page fetch (original behavior)
+            html = client.fetch(url)
+            print(f"Fetched {len(html)} bytes")
 
-        # Check if blocked
-        if "captcha" in html.lower() or "enable JS" in html:
-            print("\nBLOCKED: Page requires JavaScript/Captcha")
-            print("SeLoger search results require a headless browser.")
-            sys.exit(1)
+            # Check if blocked
+            if "captcha" in html.lower() or "enable JS" in html:
+                print("\nBLOCKED: Page requires JavaScript/Captcha")
+                print("SeLoger search results require a headless browser.")
+                sys.exit(1)
 
-        listing_urls = extract_listing_urls(html)
+            listing_urls = extract_listing_urls(html)
 
         if not listing_urls:
-            print("\nNo listing URLs found in the page.")
-            print("Page preview:")
-            print(html[:1000])
+            print("\nNo listing URLs found.")
             sys.exit(1)
 
         # Output URLs only mode
