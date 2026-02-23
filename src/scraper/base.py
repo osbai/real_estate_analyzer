@@ -1011,6 +1011,7 @@ class DescriptionParser:
     CONDITION_PATTERNS = {
         r"aucuns?\s+travaux\s+[àa]\s+pr[ée]voir": "No work needed",
         r"travaux\s+[àa]\s+pr[ée]voir": "Work needed",
+        r"enti[èe]rement\s+[àa]\s+r[ée]nover": "Full renovation needed",
         r"[àa]\s+r[ée]nover": "To renovate",
         r"[àa]\s+rafra[iî]chir": "To refresh",
         r"refait\s+[àa]\s+neuf|enti[èe]rement\s+r[ée]nov[ée]": "Fully renovated",

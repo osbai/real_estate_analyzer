@@ -494,9 +494,9 @@ def print_investment_summary(
 
         interest_rate = CashFlowModeler.DEFAULT_RATES.get(loan_duration, 3.65)
 
-    print("\n" + "=" * 110)
+    print("\n" + "=" * 170)
     print("💰 INVESTMENT ANALYSIS SUMMARY")
-    print("=" * 110)
+    print("=" * 170)
 
     # Print financial assumptions
     print("\n📋 Financial Parameters Used:")
@@ -513,9 +513,9 @@ def print_investment_summary(
     # Header
     print(
         f"{'#':<3} {'City':<15} {'Price':<12} {'Total Cost':<14} "
-        f"{'Rent':<10} {'Gross %':<9} {'Net %':<9} {'Cash Flow':<14} {'Status':<20}"
+        f"{'Rent':<10} {'Gross %':<9} {'Net %':<9} {'Cash Flow':<14} {'Status':<14} {'URL'}"
     )
-    print("-" * 110)
+    print("-" * 170)
 
     for a in analyses:
         if not a.investment:
@@ -540,10 +540,10 @@ def print_investment_summary(
             f"{a.rank:<3} {a.listing.address.city:<15} "
             f"{inv.purchase_price:<12,} {inv.total_acquisition_cost:<14,} "
             f"{rent_str:<10} {inv.gross_yield:<9.2f} {inv.net_yield:<9.2f} "
-            f"{cf_str:<14} {status_short:<20}"
+            f"{cf_str:<14} {status_short:<14} {a.listing.url}"
         )
 
-    print("-" * 110)
+    print("-" * 170)
     print("* = estimated rent | Yields in % | Cash Flow = monthly")
 
     # Find best investment

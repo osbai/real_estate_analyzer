@@ -308,8 +308,18 @@ class LeBonCoinScraper(BaseScraper):
         else:
             annual_charges = None
 
-        # Property condition
+        # Description
+        description = ad_data.get("body", "")
+        title = ad_data.get("subject", "")
+
+        # Property condition - first from attributes, then from description
         condition = self._extract_attribute(attributes, "real_estate_condition")
+        
+        # If no condition from attributes, try to parse from description
+        if not condition and description:
+            parsed = DescriptionParser.parse(description)
+            if parsed.get("features", {}).get("condition"):
+                condition = parsed["features"]["condition"]
 
         # Furnished
         furnished = self._extract_attribute(attributes, "furnished")

@@ -54,7 +54,8 @@ Analyze and export all listings with investment metrics:
 python scripts/compare_listings.py \
   --from-cache "seloger_search_20260222_213842_0dda2d10.json" \
   --investment \
-  --export investment_report.csv
+  --export investment_report.csv \
+  --interest-rate 3.1
 ```
 
 The CSV includes: Price, Total Cost, Rent, Gross Yield, Net Yield, Cash Flow, Score, DPE, and URL for each listing.
