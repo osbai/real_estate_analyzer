@@ -221,7 +221,7 @@ grep -oh '"list_id":[0-9]*' file1.html file2.html file3.html | sort -u | \
 cat urls.txt | xargs python scripts/compare_listings.py --investment
 
 # Export to CSV
-cat urls.txt | xargs python scripts/compare_listings.py --investment --export report.csv
+cat urls.txt | xargs python scripts/compare_listings.py --investment --export investment_report.csv --interest-rate 3.1
 
 # Compare first 10 listings only
 python scripts/compare_listings.py $(cat urls.txt | head -10 | tr '\n' ' ') --investment

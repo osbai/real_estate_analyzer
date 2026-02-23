@@ -1177,6 +1177,37 @@ class FrenchRealEstateEvaluator:
             score += min(len(quality_features) * 3, 12)
             details.append(f"Character: {', '.join(quality_features)}")
 
+        # Property condition - check for renovation needs
+        condition = listing.features.condition
+        if condition:
+            condition_lower = condition.lower()
+            if "full renovation" in condition_lower or "entièrement" in condition_lower:
+                score -= 25
+                red_flags.append(
+                    "Full renovation needed - budget €800-1500/m² for works"
+                )
+                details.append("⚠️ Full renovation needed")
+                status = "🔴"
+            elif "to renovate" in condition_lower or "à rénover" in condition_lower:
+                score -= 15
+                red_flags.append("Renovation needed - budget for works required")
+                details.append("⚠️ To renovate")
+                status = "⚠️"
+            elif "work needed" in condition_lower or "travaux" in condition_lower:
+                score -= 10
+                details.append("⚠️ Work needed")
+            elif "to refresh" in condition_lower or "rafraîchir" in condition_lower:
+                score -= 5
+                details.append("Minor refresh needed")
+            elif "renovated" in condition_lower or "rénové" in condition_lower:
+                score += 10
+                green_flags.append("Recently renovated")
+                details.append("✓ Renovated")
+            elif "excellent" in condition_lower or "parfait" in condition_lower:
+                score += 15
+                green_flags.append("Excellent condition")
+                details.append("✓ Excellent condition")
+
         return CriterionScore(
             name="Intrinsic Features",
             category="Features",
