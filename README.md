@@ -197,7 +197,8 @@ Due to strict anti-bot protection on search pages, the recommended workflow is t
 
 **Step 1: Save search HTML from browser**
 ```bash
-# 1. Open LeBonCoin search in your browser with your filters
+# 1. Open LeBonCoin search in your browser with your filters - for example:
+# https://www.leboncoin.fr/recherche?category=9&locations=Aubervilliers_93300__48.9136_2.38237_2133_5000&price=min-300000&rooms=2-2&square=38-max&bedrooms=1-1&real_estate_type=2&immo_sell_type=old%2Cnew&floor_property=upper_floor&energy_rate=a%2Cb%2Cc%2Cd&global_condition=1%2C2%2C3&page=3
 # 2. Right-click → "View Page Source" (or Cmd+U / Ctrl+U)
 # 3. Save the HTML to a file (e.g., leboncoin_page1.html)
 # 4. If multiple pages, repeat for each page
